@@ -986,22 +986,25 @@ function fbErr(err){
 
 /* ============ DEBUG BADGE ============ */
 function showOSDebugBadge(status, hasId){
-  var existing = $("os-debug-badge");
-  if(existing) existing.remove();
+  /* Badge only visible in Profile page */
   var osStatus = "❌ Not Found";
   var osColor = "#ff5364";
   if(status === "cordova"){ osStatus = "✅ Cordova"; osColor = "#19d58b"; }
   else if(status === "appmint"){ osStatus = "✅ AppMint"; osColor = "#19d58b"; }
   else if(status === "capacitor"){ osStatus = "⚠️ Capacitor"; osColor = "#ffc857"; }
   var idTxt = hasId ? "✅ " + String(hasId).substring(0,8) + "..." : "❌ Not Set";
-  var div = document.createElement("div");
-  div.id = "os-debug-badge";
-  div.style.cssText = "position:fixed;top:70px;left:5px;z-index:999999;background:#000;color:"+osColor+";padding:6px 10px;border-radius:8px;font-size:10px;font-family:monospace;border:1px solid "+osColor+";opacity:0.9;pointer-events:none";
-  div.innerHTML = "OS: " + osStatus + "<br>ID: " + idTxt;
-  document.body.appendChild(div);
-  setTimeout(function(){ if(div && div.parentNode) div.style.opacity = "0.3"; }, 8000);
-}
 
+  /* Save status to global for profile page */
+  window.__OS_STATUS_INFO = {
+    status: osStatus,
+    color: osColor,
+    id: idTxt
+  };
+
+  /* Badge only added inside profile page (not body) */
+  var old = $("os-debug-badge");
+  if(old) old.remove();
+}
 /* ============ AUTH TABS ============ */
 $("loginTab").onclick = () => {
   $("loginTab").classList.add("active");
@@ -1811,12 +1814,20 @@ async function loadProfile(){
     h += '<div class="profile-avatar">' + (d.photoURL ? '<img src="'+esc(d.photoURL)+'">' : esc(name.charAt(0).toUpperCase())) + '</div>';
     h += '<h2 style="font-size:19px;font-weight:900">'+esc(name)+'</h2>';
     h += '<div class="muted smalltext" style="margin-top:4px">'+esc(currentUser.email||"")+'</div>';
-    h += '<div class="profile-stats">';
-    h += '<div class="profile-stat"><b>৳'+money(bal)+'</b><small>Wallet</small></div>';
-    h += '<div class="profile-stat"><b>'+matchCount+'</b><small>Match</small></div>';
-    h += '<div class="profile-stat"><b>'+wins+'</b><small>Wins</small></div>';
-    h += '</div></div>';
+    h += '<div class="muted smalltext" style="margin-top:4px">'+esc(currentUser.email||"")+'</div>';
 
+/* OneSignal debug info (only in profile) */
+if(window.__OS_STATUS_INFO){
+  h += '<div style="margin-top:10px;padding:8px 12px;background:#07111f;border:1px solid '+window.__OS_STATUS_INFO.color+'44;border-radius:10px;font-size:10px;font-family:monospace;color:'+window.__OS_STATUS_INFO.color+'">';
+  h += 'OS: ' + window.__OS_STATUS_INFO.status + ' | ID: ' + window.__OS_STATUS_INFO.id;
+  h += '</div>';
+}
+
+h += '<div class="profile-stats">';
+h += '<div class="profile-stat"><b>৳'+money(bal)+'</b><small>Wallet</small></div>';
+h += '<div class="profile-stat"><b>'+matchCount+'</b><small>Match</small></div>';
+h += '<div class="profile-stat"><b>'+wins+'</b><small>Wins</small></div>';
+h += '</div></div>';
     h += '<div class="profile-menu">';
     h += '<button id="pEdit">✏️ Edit Profile <span>›</span></button>';
     h += '<button id="pHistory">📜 History <span>›</span></button>';
