@@ -29,43 +29,32 @@ jobs:
         run: |
           mkdir -p www
           cp index.html www/
-          ls -la www/
 
-      - name: Install Capacitor and OneSignal
+      - name: Install Capacitor
         run: |
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-          npm install onesignal-cordova-plugin@5
 
       - name: Initialize Capacitor
         run: |
           npx cap init "OUR EFOOTBALL TOUR" "com.ourefootballtour.app" --web-dir=www
           npx cap add android
 
-      - name: Configure Capacitor for OneSignal
+      - name: Add OneSignal Cordova Plugin
         run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.ourefootballtour.app",
-            "appName": "OUR EFOOTBALL TOUR",
-            "webDir": "www",
-            "plugins": {
-              "OneSignal": {
-                "appId": "58a1aed9-0e82-4063-8da0-bd9f19dc1b94"
-              }
-            }
-          }
-          EOF
+          npm install onesignal-cordova-plugin@5
+          npx cap sync android
 
-      - name: Sync web and plugins
-        run: npx cap sync android
+      - name: Verify plugin
+        run: |
+          echo "=== Cordova plugins ==="
+          cat android/capacitor-cordova-android-plugins/src/main/assets/capacitor.plugins.json 2>/dev/null || echo "NOT FOUND"
+          echo "=== End ==="
 
       - name: Copy google-services.json
-        run: |
-          cp google-services.json android/app/google-services.json
-          ls -la android/app/google-services.json
+        run: cp google-services.json android/app/google-services.json
 
-      - name: Add OneSignal App ID to strings.xml
+      - name: Add OneSignal App ID
         run: |
           mkdir -p android/app/src/main/res/values
           cat > android/app/src/main/res/values/strings.xml << 'EOF'
@@ -79,11 +68,9 @@ jobs:
           </resources>
           EOF
 
-      - name: Add permissions to AndroidManifest
+      - name: Add permissions
         run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
           python3 << 'PYEOF'
-          import re
           path = 'android/app/src/main/AndroidManifest.xml'
           with open(path, 'r') as f:
               content = f.read()
@@ -95,17 +82,16 @@ jobs:
               )
           with open(path, 'w') as f:
               f.write(content)
-          print("Manifest updated")
           PYEOF
 
-      - name: Generate icons from icon.png
+      - name: Generate icons
         run: |
           npm install @capacitor/assets@3
           mkdir -p assets
           cp icon.png assets/icon.png
           cp icon.png assets/icon-only.png
           cp icon.png assets/icon-foreground.png
-          npx @capacitor/assets generate --android || echo "Icon generation failed but continuing"
+          npx @capacitor/assets generate --android || echo "Icon gen skipped"
 
       - name: Build APK
         run: |
@@ -125,11 +111,7 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.${{ github.run_number }}
-          name: OUR EFOOTBALL TOUR v1.3.${{ github.run_number }}
-          body: |
-            ✅ OneSignal Push Notification Integrated
-            ✅ Custom icon applied
-            ✅ Background notification support
+          tag_name: v2.1.${{ github.run_number }}
+          name: OUR EFOOTBALL TOUR v2.1.${{ github.run_number }}
           files: android/app/build/outputs/apk/debug/app-debug.apk
           draft: false
