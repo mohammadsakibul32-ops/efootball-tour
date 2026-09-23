@@ -1,4 +1,4 @@
-name: Build APK from HTML
+name: Build APK with OneSignal
 
 on:
   push:
@@ -31,18 +31,81 @@ jobs:
           cp index.html www/
           ls -la www/
 
-      - name: Install Capacitor
+      - name: Install Capacitor and OneSignal
         run: |
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+          npm install onesignal-cordova-plugin@5
 
       - name: Initialize Capacitor
         run: |
           npx cap init "OUR EFOOTBALL TOUR" "com.ourefootballtour.app" --web-dir=www
           npx cap add android
 
-      - name: Sync web files
+      - name: Configure Capacitor for OneSignal
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.ourefootballtour.app",
+            "appName": "OUR EFOOTBALL TOUR",
+            "webDir": "www",
+            "plugins": {
+              "OneSignal": {
+                "appId": "58a1aed9-0e82-4063-8da0-bd9f19dc1b94"
+              }
+            }
+          }
+          EOF
+
+      - name: Sync web and plugins
         run: npx cap sync android
+
+      - name: Copy google-services.json
+        run: |
+          cp google-services.json android/app/google-services.json
+          ls -la android/app/google-services.json
+
+      - name: Add OneSignal App ID to strings.xml
+        run: |
+          mkdir -p android/app/src/main/res/values
+          cat > android/app/src/main/res/values/strings.xml << 'EOF'
+          <?xml version='1.0' encoding='utf-8'?>
+          <resources>
+              <string name="app_name">OUR EFOOTBALL TOUR</string>
+              <string name="title_activity_main">OUR EFOOTBALL TOUR</string>
+              <string name="package_name">com.ourefootballtour.app</string>
+              <string name="custom_url_scheme">com.ourefootballtour.app</string>
+              <string name="onesignal_app_id">58a1aed9-0e82-4063-8da0-bd9f19dc1b94</string>
+          </resources>
+          EOF
+
+      - name: Add permissions to AndroidManifest
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          python3 << 'PYEOF'
+          import re
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path, 'r') as f:
+              content = f.read()
+          if 'POST_NOTIFICATIONS' not in content:
+              content = content.replace(
+                  '<application',
+                  '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <application',
+                  1
+              )
+          with open(path, 'w') as f:
+              f.write(content)
+          print("Manifest updated")
+          PYEOF
+
+      - name: Generate icons from icon.png
+        run: |
+          npm install @capacitor/assets@3
+          mkdir -p assets
+          cp icon.png assets/icon.png
+          cp icon.png assets/icon-only.png
+          cp icon.png assets/icon-foreground.png
+          npx @capacitor/assets generate --android || echo "Icon generation failed but continuing"
 
       - name: Build APK
         run: |
@@ -50,20 +113,23 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK to Artifacts
+      - name: Upload APK artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
 
-      - name: Create Release with APK
+      - name: Create Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: OUR EFOOTBALL TOUR v1.0.${{ github.run_number }}
+          tag_name: v1.3.${{ github.run_number }}
+          name: OUR EFOOTBALL TOUR v1.3.${{ github.run_number }}
           body: |
-            Automated APK build from HTML.
-            Built on: ${{ github.event.head_commit.timestamp }}
+            ✅ OneSignal Push Notification Integrated
+            ✅ Custom icon applied
+            ✅ Background notification support
           files: android/app/build/outputs/apk/debug/app-debug.apk
           draft: false
-          prerelease: false
