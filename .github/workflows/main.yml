@@ -17,6 +17,12 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Prepare www folder
+        run: |
+          mkdir -p www
+          cp index.html www/
+          ls -la www/
+
       - name: Install Capacitor
         run: |
           npm init -y
@@ -24,7 +30,7 @@ jobs:
 
       - name: Initialize Capacitor
         run: |
-          npx cap init "OUR EFOOTBALL TOUR" "com.ourefootballtour.app" --web-dir=.
+          npx cap init "OUR EFOOTBALL TOUR" "com.ourefootballtour.app" --web-dir=www
           npx cap add android
 
       - name: Sync web files to Android project
