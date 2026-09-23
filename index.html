@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<script src="cordova.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -148,9 +149,9 @@ select.input{appearance:none;-webkit-appearance:none;background-image:linear-gra
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .notif-banner{position:fixed;bottom:82px;left:50%;transform:translateX(-50%) translateY(120px);width:min(440px,calc(100% - 20px));z-index:9998;background:linear-gradient(145deg,#0e1b2c,#0a1422);border:1px solid #19d5ff;border-radius:16px;padding:14px;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 40px rgba(25,213,255,.3);display:flex;align-items:flex-start;gap:12px;opacity:0;transition:all .4s cubic-bezier(.68,-.55,.27,1.55);pointer-events:none}
 .notif-banner.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
-.notif-banner.wallet{border-color:#19d58b;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 40px rgba(25,213,139,.3)}
-.notif-banner.match{border-color:#8b5cf6;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 40px rgba(139,92,246,.3)}
-.notif-banner.urgent{border-color:#ff5364;box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 40px rgba(255,83,100,.4)}
+.notif-banner.wallet{border-color:#19d58b}
+.notif-banner.match{border-color:#8b5cf6}
+.notif-banner.urgent{border-color:#ff5364}
 .notif-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:22px;flex-shrink:0;background:rgba(25,213,255,.15);border:1px solid rgba(25,213,255,.3)}
 .notif-content{flex:1;min-width:0;padding-top:2px}
 .notif-title{font-size:13px;font-weight:900;margin-bottom:4px}
@@ -167,7 +168,7 @@ select.input{appearance:none;-webkit-appearance:none;background-image:linear-gra
 #noticePopup .np-body{padding:22px;overflow-y:auto;flex:1}
 #noticePopup .np-item{padding:16px;background:#07111f;border:1px solid #1d3045;border-radius:14px;margin-bottom:12px;position:relative}
 #noticePopup .np-item:last-child{margin-bottom:0}
-#noticePopup .np-item.new{border-color:rgba(25,213,255,.4);background:linear-gradient(145deg,rgba(25,213,255,.06),rgba(139,92,246,.04))}
+#noticePopup .np-item.new{border-color:rgba(25,213,255,.4)}
 #noticePopup .np-item.new::before{content:"NEW";position:absolute;top:-6px;right:12px;padding:3px 10px;border-radius:20px;background:linear-gradient(135deg,#19d5ff,#8b5cf6);color:#001018;font-size:9px;font-weight:900;letter-spacing:1px}
 #noticePopup .np-item img{width:100%;border-radius:10px;margin-bottom:10px}
 #noticePopup .np-title{font-size:14px;font-weight:900;margin-bottom:6px;display:flex;gap:8px;align-items:center}
@@ -176,10 +177,8 @@ select.input{appearance:none;-webkit-appearance:none;background-image:linear-gra
 #noticePopup .np-footer{padding:16px 22px 22px;background:#0a1626;border-top:1px solid #1d3045}
 #noticePopup .np-btn{width:100%;padding:15px;border:0;border-radius:12px;background:linear-gradient(135deg,#19d58b,#0dbb9a);color:#02130e;font-size:14px;font-weight:950;cursor:pointer;letter-spacing:.5px}
 #noticePopup .np-btn:active{transform:scale(.97)}
-.countdown-timer{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:linear-gradient(135deg,rgba(25,213,255,.15),rgba(139,92,246,.15));border:1px solid rgba(25,213,255,.4);font-size:12px;font-weight:900;color:#72e8ff;margin-bottom:10px;animation:cdGlow 2s ease-in-out infinite}
-@keyframes cdGlow{0%,100%{box-shadow:0 0 10px rgba(25,213,255,.2)}50%{box-shadow:0 0 20px rgba(25,213,255,.5)}}
-.countdown-timer.urgent{background:linear-gradient(135deg,rgba(255,83,100,.2),rgba(255,83,100,.1));border-color:rgba(255,83,100,.5);color:#ff8995;animation:cdUrgent 1s ease-in-out infinite}
-@keyframes cdUrgent{0%,100%{box-shadow:0 0 10px rgba(255,83,100,.3)}50%{box-shadow:0 0 25px rgba(255,83,100,.7)}}
+.countdown-timer{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;background:linear-gradient(135deg,rgba(25,213,255,.15),rgba(139,92,246,.15));border:1px solid rgba(25,213,255,.4);font-size:12px;font-weight:900;color:#72e8ff;margin-bottom:10px}
+.countdown-timer.urgent{background:linear-gradient(135deg,rgba(255,83,100,.2),rgba(255,83,100,.1));border-color:rgba(255,83,100,.5);color:#ff8995}
 .countdown-timer .cd-time{font-family:'Courier New',monospace;font-size:13px;letter-spacing:1px}
 .reward-card{background:linear-gradient(145deg,#0e1b2c,#0a1422);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:12px}
 .slider-wrap{position:relative;overflow:hidden;border-radius:22px;border:1px solid #23405b;margin-bottom:16px;background:#0a1422}
@@ -242,7 +241,7 @@ select.input{appearance:none;-webkit-appearance:none;background-image:linear-gra
   <header class="topbar">
     <div class="brand">⚡ OUR EFOOTBALL TOUR<small>PLAY • COMPETE • WIN</small></div>
     <button id="notificationBtn" class="iconbtn" title="Notifications">🔔<span id="notifBadge" class="notif-dot hidden">0</span></button>
-    <button class="refresh-btn" onclick="forceRefreshAll()" title="Server theke notun data">🔄 Refresh</button>
+    <button class="refresh-btn" onclick="forceRefreshAll()">🔄 Refresh</button>
   </header>
 
   <main class="container">
@@ -384,7 +383,7 @@ select.input{appearance:none;-webkit-appearance:none;background-image:linear-gra
 
 <script>
 /* ============================================================
-   OUR EFOOTBALL TOUR — PART 1: CORE (with OneSignal + Persistence)
+   OUR EFOOTBALL TOUR — PART 1: CORE (with OneSignal Cordova)
 ============================================================ */
 
 const firebaseConfig = {
@@ -403,36 +402,38 @@ const db = firebase.firestore();
 const storage = firebase.storage();
 const FV = firebase.firestore.FieldValue;
 
-/* ============ APK WEBVIEW PERSISTENCE FIX ============ */
+/* APK WebView persistence fix */
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
   .then(() => console.log("✅ Auth persistence set to LOCAL"))
   .catch(e => console.warn("Persistence error:", e));
 
-/* ============ ONESIGNAL NATIVE BRIDGE HELPER ============ */
+/* ============ ONESIGNAL CORDOVA BRIDGE ============ */
+const ONESIGNAL_APP_ID = "58a1aed9-0e82-4063-8da0-bd9f19dc1b94";
+
 function initOneSignal(userId){
   try {
-    // AppMint / WebView APK bridge
+    // OneSignal Cordova Plugin (Capacitor build)
+    if (window.plugins && window.plugins.OneSignal) {
+      var OS = window.plugins.OneSignal;
+      OS.setAppId(ONESIGNAL_APP_ID);
+      OS.setNotificationOpenedHandler(function(jsonData){
+        console.log("Notification opened:", jsonData);
+      });
+      OS.promptForPushNotificationsWithUserResponse(function(accepted){
+        console.log("Permission:", accepted);
+      });
+      OS.setExternalUserId(userId);
+      console.log("✅ Cordova OneSignal external_id set:", userId);
+      return "cordova";
+    }
+    // AppMint bridge (পুরনো)
     if (window.AppMint && window.AppMint.OneSignal) {
-      window.AppMint.OneSignal.login(userId)
-        .then(() => console.log("✅ AppMint OneSignal external_id set:", userId))
-        .catch(err => console.error("❌ AppMint OneSignal login:", err));
-      if (window.AppMint.OneSignal.requestPermission) {
-        window.AppMint.OneSignal.requestPermission().catch(()=>{});
-      }
+      window.AppMint.OneSignal.login(userId).catch(function(){});
+      window.AppMint.OneSignal.requestPermission().catch(function(){});
+      console.log("✅ AppMint OneSignal set:", userId);
       return "appmint";
     }
-    // Capacitor bridge (GitHub Actions build এর জন্য)
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.OneSignal) {
-      window.Capacitor.Plugins.OneSignal.login({ externalId: userId })
-        .then(() => console.log("✅ Capacitor OneSignal ID set:", userId))
-        .catch(err => console.error("❌ Capacitor OneSignal login:", err));
-      if (window.Capacitor.Plugins.OneSignal.requestPermission) {
-        window.Capacitor.Plugins.OneSignal.requestPermission().catch(()=>{});
-      }
-      return "capacitor";
-    }
-    // কিছু native bridge না থাকলে
-    console.log("⚠️ OneSignal Native bridge পাওয়া যায়নি — foreground only");
+    console.log("⚠️ OneSignal bridge পাওয়া যায়নি");
     return "none";
   } catch(e) {
     console.warn("OneSignal setup error:", e);
@@ -442,13 +443,21 @@ function initOneSignal(userId){
 
 function logoutOneSignal(){
   try {
-    if (window.AppMint && window.AppMint.OneSignal) {
+    if (window.plugins && window.plugins.OneSignal) {
+      window.plugins.OneSignal.removeExternalUserId();
+    } else if (window.AppMint && window.AppMint.OneSignal) {
       window.AppMint.OneSignal.logout();
-    } else if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.OneSignal) {
-      window.Capacitor.Plugins.OneSignal.logout();
     }
   } catch(e) { console.warn("OneSignal logout:", e); }
 }
+
+/* Cordova ready হলে OneSignal init */
+document.addEventListener("deviceready", function(){
+  console.log("✅ Cordova deviceready");
+  if (window.plugins && window.plugins.OneSignal) {
+    window.plugins.OneSignal.setAppId(ONESIGNAL_APP_ID);
+  }
+}, false);
 
 /* ============ GLOBAL STATE ============ */
 let currentUser = null;
@@ -619,10 +628,9 @@ auth.onAuthStateChanged(async user => {
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
 
-    /* ===== OneSignal Native Bridge (Background Push) ===== */
-    initOneSignal(user.uid);
+    /* OneSignal initialize with user ID */
+    setTimeout(function(){ initOneSignal(user.uid); }, 1500);
 
-    /* Boot sequence */
     await loadDashboard();
     startNotifListener();
     startNotifBannerListener();
@@ -943,12 +951,8 @@ $("depositBtn").onclick = async function(){
     closeModal("addMoneyModal");
     toast("✅ Deposit request পাঠানো হয়েছে");
     setTimeout(checkAutoApprove, 3000);
-  }catch(e){
-    toast(e.message || "Submit হয়নি");
-  }finally{
-    hideLoader();
-    this.disabled = false;
-  }
+  }catch(e){ toast(e.message || "Submit হয়নি"); }
+  finally{ hideLoader(); this.disabled = false; }
 };
 
 function openWithdraw(){
@@ -1007,12 +1011,8 @@ $("withdrawBtn").onclick = async function(){
     closeModal("withdrawModal");
     toast("✅ Withdrawal request submitted");
     loadWallet();
-  }catch(e){
-    toast(e.message || "Request fail");
-  }finally{
-    hideLoader();
-    this.disabled = false;
-  }
+  }catch(e){ toast(e.message || "Request fail"); }
+  finally{ hideLoader(); this.disabled = false; }
 };
 
 function startNotifListener(){
@@ -1356,7 +1356,7 @@ function loadMyMatches(){ /* Part 2 */ }
 function stopChat(){ /* Part 2 */ }
 function showHistoryPicker(){ /* Part 2 */ }
 
-console.log("✅ OUR EFOOTBALL TOUR — Part 1 loaded (with OneSignal bridge)");
+console.log("✅ OUR EFOOTBALL TOUR — Part 1 loaded");
 </script>
 
 <script>
@@ -2131,5 +2131,6 @@ console.log("✅ OUR EFOOTBALL TOUR — Part 1 loaded (with OneSignal bridge)");
   }
 })();
 </script>
+
 </body>
-</html>
+</html
