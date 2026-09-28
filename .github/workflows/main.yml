@@ -25,46 +25,71 @@ jobs:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
           accept-android-sdk-licenses: true
 
-      - name: Accept Android Licenses
+      - name: Accept Licenses
         run: yes | sdkmanager --licenses || true
 
       - name: Install ImageMagick
         run: sudo apt-get update && sudo apt-get install -y imagemagick
 
-      - name: Setup www folder
+      - name: Setup www
         run: |
           mkdir -p www
-          cp index.html www/ || true
+          cp index.html www/
 
       - name: Install Capacitor
         run: |
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-
-      - name: Install Capacitor plugins
-        run: |
           npm install @capacitor/splash-screen@6 @capacitor/status-bar@6 @capacitor/app@6
 
-      - name: Install OneSignal Cordova plugin
-        run: npm install onesignal-cordova-plugin@5 --legacy-peer-deps
+      - name: Install OneSignal + Adapter
+        run: |
+          npm install onesignal-cordova-plugin@5 --legacy-peer-deps
+          npm install cordova-plugin-androidx-adapter@1 --legacy-peer-deps
+
+      - name: Create Capacitor Config
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.ourefootballtour.app",
+            "appName": "OUR TOUR",
+            "webDir": "www",
+            "bundledWebRuntime": false,
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2500,
+                "launchAutoHide": true,
+                "launchFadeOutDuration": 400,
+                "backgroundColor": "#05070e",
+                "androidSplashResourceName": "splash",
+                "androidScaleType": "CENTER_CROP",
+                "showSpinner": false,
+                "splashFullScreen": true,
+                "splashImmersive": false,
+                "useDialog": false
+              }
+            }
+          }
+          EOF
 
       - name: Init Capacitor
-        run: npx cap init "OUR TOUR" "com.ourefootballtour.app" --web-dir www
+        run: npx cap init "OUR TOUR" "com.ourefootballtour.app" --web-dir www || true
 
-      - name: Add Android Platform
-        run: |
-          npx cap add android
-          npx cap sync android
+      - name: Add Android
+        run: npx cap add android
+
+      - name: Sync Cordova plugins
+        run: npx cap sync android
 
       - name: Generate Icons & Splash
         run: |
           if [ ! -f icon.png ]; then
-            echo "icon.png missing!"
+            echo "ERROR: icon.png missing"
             exit 1
           fi
-          
           RES=android/app/src/main/res
           
+          # App launcher icons
           for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
@@ -74,21 +99,57 @@ jobs:
             cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png"
           done
           
-          for entry in "480:drawable" "720:drawable-hdpi" "1080:drawable-xhdpi" "1440:drawable-xxhdpi" "1920:drawable-xxxhdpi"; do
+          # Splash screens — ALL densities + landscape + portrait
+          # Portrait
+          for entry in "480:drawable-port-mdpi" "720:drawable-port-hdpi" "1080:drawable-port-xhdpi" "1440:drawable-port-xxhdpi" "1920:drawable-port-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
             mkdir -p "$RES/$FOLDER"
             ICON_SIZE=$((SIZE/3))
-            convert -size ${SIZE}x${SIZE} xc:'#05070e' \
-              \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) \
-              -gravity center -composite \
-              "$RES/$FOLDER/splash.png"
+            convert -size ${SIZE}x${SIZE} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
           done
           
+          # Landscape
+          for entry in "800:drawable-land-mdpi" "1280:drawable-land-hdpi" "1920:drawable-land-xhdpi" "2560:drawable-land-xxhdpi" "3200:drawable-land-xxxhdpi"; do
+            SIZE="${entry%%:*}"
+            FOLDER="${entry##*:}"
+            mkdir -p "$RES/$FOLDER"
+            W=$SIZE
+            H=$((SIZE*9/16))
+            ICON_SIZE=$((H/3))
+            convert -size ${W}x${H} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
+          done
+          
+          # Default (fallback)
+          mkdir -p "$RES/drawable"
+          convert -size 1080x1920 xc:'#05070e' \( icon.png -resize 360x360 \) -gravity center -composite "$RES/drawable/splash.png"
+          
+          # Remove adaptive icons for legacy look
           rm -f $RES/mipmap-anydpi-v26/ic_launcher.xml || true
           rm -f $RES/mipmap-anydpi-v26/ic_launcher_round.xml || true
           
-          echo "=== Icons done ==="
+          # Verify
+          echo "=== Splash files ==="
+          find $RES -name "splash.png" -exec ls -la {} \;
+
+      - name: Create Splash Theme (Android 12+)
+        run: |
+          RES=android/app/src/main/res
+          # values folder for theme
+          mkdir -p $RES/values
+          
+          # Append to styles.xml (create if not exists)
+          STYLES=$RES/values/styles.xml
+          if [ ! -f "$STYLES" ]; then
+            cat > "$STYLES" << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:background">@drawable/splash</item>
+              </style>
+          </resources>
+          EOF
+          fi
 
       - name: Copy google-services
         run: |
@@ -96,17 +157,63 @@ jobs:
             cp google-services.json android/app/
           fi
 
-      - name: Fix AndroidManifest.xml
+      - name: Detect MainActivity Package
+        id: pkg
+        run: |
+          MAIN=$(find android/app/src/main/java -name "MainActivity.java" | head -1)
+          echo "MainActivity: $MAIN"
+          PKG=$(grep -m1 "^package" "$MAIN" | sed 's/package//;s/;//' | tr -d ' ')
+          echo "package=$PKG" >> $GITHUB_OUTPUT
+          echo "Detected: $PKG"
+
+      - name: Rewrite MainActivity with OneSignal
+        run: |
+          MAIN=$(find android/app/src/main/java -name "MainActivity.java" | head -1)
+          PKG="${{ steps.pkg.outputs.package }}"
+          
+          cat > "$MAIN" << EOF
+          package $PKG;
+
+          import com.getcapacitor.BridgeActivity;
+          import android.os.Bundle;
+          import com.onesignal.OneSignal;
+          import com.onesignal.debug.LogLevel;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  
+                  try {
+                      OneSignal.getDebug().setLogLevel(LogLevel.WARN);
+                      OneSignal.initWithContext(this, "58a1aed9-0e82-4063-8da0-bd9f19dc1b94");
+                      OneSignal.getNotifications().requestPermission(false, com.onesignal.Continue.none());
+                  } catch (Exception e) {
+                      e.printStackTrace();
+                  }
+              }
+          }
+          EOF
+          
+          echo "=== MainActivity ==="
+          cat "$MAIN"
+
+      - name: Add OneSignal Gradle Dep
+        run: |
+          GRADLE=android/app/build.gradle
+          if ! grep -q "com.onesignal:OneSignal" "$GRADLE"; then
+            python3 -c "
+          with open('$GRADLE','r') as f: c=f.read()
+          c=c.replace('dependencies {', 'dependencies {\n    implementation \"com.onesignal:OneSignal:5.1.6\"', 1)
+          with open('$GRADLE','w') as f: f.write(c)
+          "
+          fi
+
+      - name: Fix AndroidManifest
         run: |
           python3 << 'PYEOF'
-          import re, os
-          
+          import re
           path = "android/app/src/main/AndroidManifest.xml"
-          
-          if not os.path.exists(path):
-              print("Manifest not found!")
-              exit(1)
-          
           with open(path) as f:
               c = f.read()
           
@@ -123,49 +230,15 @@ jobs:
           if "onesignal_app_id" not in c:
               m = re.search(r'(<application[^>]*>)', c)
               if m:
-                  tag = m.group(1)
-                  c = c.replace(tag, tag + '\n        <meta-data android:name="onesignal_app_id" android:value="58a1aed9-0e82-4063-8da0-bd9f19dc1b94" />', 1)
+                  c = c.replace(m.group(1), m.group(1) + '\n        <meta-data android:name="onesignal_app_id" android:value="58a1aed9-0e82-4063-8da0-bd9f19dc1b94" />', 1)
           
           with open(path, "w") as f:
               f.write(c)
-          
           print("=== Manifest updated ===")
           PYEOF
 
-      - name: Add OneSignal Gradle dependency
-        run: |
-          GRADLE=android/app/build.gradle
-          if ! grep -q "com.onesignal:OneSignal" "$GRADLE"; then
-            python3 -c "
-          with open('$GRADLE','r') as f: c=f.read()
-          c=c.replace('dependencies {', 'dependencies {\n    implementation \"com.onesignal:OneSignal:5.1.6\"', 1)
-          with open('$GRADLE','w') as f: f.write(c)
-          "
-          fi
-
-      - name: Update capacitor config
-        run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.ourefootballtour.app",
-            "appName": "OUR TOUR",
-            "webDir": "www",
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 2000,
-                "launchAutoHide": true,
-                "backgroundColor": "#05070e",
-                "androidScaleType": "CENTER_CROP",
-                "showSpinner": false,
-                "androidSplashResourceName": "splash"
-              },
-              "OneSignal": {
-                "appId": "58a1aed9-0e82-4063-8da0-bd9f19dc1b94"
-              }
-            }
-          }
-          EOF
-          npx cap sync android
+      - name: Final Sync
+        run: npx cap sync android
 
       - name: Build APK
         run: |
