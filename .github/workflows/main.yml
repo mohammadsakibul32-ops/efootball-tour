@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,8 +31,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Verify Android SDK is available
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la "$ANDROID_HOME" || true
+          ls -la "$ANDROID_HOME/cmdline-tools" || true
+          which sdkmanager || true
+          echo "--- sdkmanager version ---"
+          sdkmanager --version || true
+          echo "--- Accepting licenses ---"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          echo "--- Available platforms ---"
+          ls "$ANDROID_HOME/platforms" || true
 
       - name: Install ImageMagick
         run: sudo apt-get update && sudo apt-get install -y imagemagick
@@ -92,6 +106,8 @@ jobs:
           if [ -f google-services.json ]; then
             cp google-services.json android/app/google-services.json
             echo "✅ google-services.json copied"
+            echo "--- Package name in file ---"
+            grep -o '"package_name"[^,]*' google-services.json || true
           else
             echo "❌ google-services.json NOT FOUND in repo root!"
             exit 1
@@ -128,13 +144,11 @@ jobs:
           echo "--- ORIGINAL MANIFEST ---"
           cat "$MF"
 
-          # Add POST_NOTIFICATIONS permission
           if ! grep -q "POST_NOTIFICATIONS" "$MF"; then
             sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <application|' "$MF"
             echo "✅ Added permissions"
           fi
 
-          # Add default notification channel meta-data
           if ! grep -q "default_notification_channel_id" "$MF"; then
             sed -i 's|</application>|    <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="default" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap/ic_launcher" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/colorPrimary" />\n    </application>|' "$MF"
             echo "✅ Added FCM meta-data"
@@ -169,7 +183,6 @@ jobs:
         run: |
           set -e
 
-          # ---------- App icons ----------
           if [ -f icon.png ]; then
             SRC=icon.png
           elif [ -f efcon.png ]; then
@@ -182,28 +195,24 @@ jobs:
 
           RES=android/app/src/main/res
 
-          # Standard densities
           convert "$SRC" -resize 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
           convert "$SRC" -resize 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
           convert "$SRC" -resize 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
           convert "$SRC" -resize 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
           convert "$SRC" -resize 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
 
-          # Round icons
           convert "$SRC" -resize 48x48   -alpha set -background none -gravity center -extent 48x48 "$RES/mipmap-mdpi/ic_launcher_round.png" || true
           convert "$SRC" -resize 72x72   -alpha set -background none -gravity center -extent 72x72 "$RES/mipmap-hdpi/ic_launcher_round.png" || true
           convert "$SRC" -resize 96x96   -alpha set -background none -gravity center -extent 96x96 "$RES/mipmap-xhdpi/ic_launcher_round.png" || true
           convert "$SRC" -resize 144x144 -alpha set -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher_round.png" || true
           convert "$SRC" -resize 192x192 -alpha set -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png" || true
 
-          # Foreground
           for d in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
             DENSITY="${d%%:*}"; SIZE="${d##*:}"
             mkdir -p "$RES/mipmap-$DENSITY"
             convert "$SRC" -resize ${SIZE}x${SIZE} -background none -gravity center -extent ${SIZE}x${SIZE} "$RES/mipmap-$DENSITY/ic_launcher_foreground.png" || true
           done
 
-          # ---------- Splash ----------
           for d in mdpi:480x800 hdpi:480x800 xhdpi:720x1280 xxhdpi:960x1600 xxxhdpi:1280x1920; do
             DENSITY="${d%%:*}"; SIZE="${d##*:}"
             W="${SIZE%%x*}"; H="${SIZE##*x}"
@@ -213,7 +222,6 @@ jobs:
               "$RES/drawable-$DENSITY/splash.png"
           done
 
-          # Fallback splash in drawable (default)
           mkdir -p "$RES/drawable"
           cp "$RES/drawable-xxxhdpi/splash.png" "$RES/drawable/splash.png"
 
@@ -251,7 +259,6 @@ jobs:
           name: "Latest Build"
           body: |
             Auto build from commit ${{ github.sha }}
-            Build date: ${{ github.event.head_commit.timestamp }}
           files: output/our-tour.apk
           make_latest: true
         env:
