@@ -12,6 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<script src="cordova.js"></script>
 <style>
 :root{--bg:#05070e;--bg2:#080b16;--panel:#0c1122;--panel2:#101731;--panel3:#151c3a;--line:rgba(255,255,255,.06);--line2:rgba(34,211,238,.18);--text:#eaf2ff;--muted:#6f7ea3;--dim:#394463;--cyan:#22d3ee;--purple:#8b5cf6;--red:#ef4444;--green:#22c55e;--gold:#fcd34d;--f-head:'Oswald',sans-serif;--f-body:'Inter',sans-serif;--safe-b:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -352,7 +353,7 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
     <div class="drawer-item" data-nav="help" onclick="go('help')"><span class="ic">📖</span>Help & Rules</div>
     <div class="drawer-item danger" onclick="doLogout()"><span class="ic">🚪</span>Logout</div>
   </nav>
-  <div class="drawer-foot">v2.2 • OUR EFOOTBALL TOUR</div>
+  <div class="drawer-foot">v3.0 • OUR EFOOTBALL TOUR</div>
 </aside>
 
 <div id="app" class="app hidden">
@@ -556,7 +557,7 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 
 <script>
 /* ================================================================
-   OUR EFOOTBALL TOUR v2.2 — FCM ENHANCED BUILD
+   OUR EFOOTBALL TOUR v3.0 — ONESIGNAL BUILD
    ================================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyBgeeZtY-q5AN7JwuXFF5sBoTM9VU7ono8",
@@ -575,6 +576,149 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
 
 const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png";
 
+/* ════════════════════════════════════════════════════════════════
+   ONESIGNAL PUSH
+   ════════════════════════════════════════════════════════════════ */
+const ONESIGNAL_APP_ID = "58a1aed9-0e82-4063-8da0-bd9f19dc1b94";
+let __osInit = false;
+let __osLoggedIn = false;
+let __osAttempts = 0;
+const OS_MAX_ATTEMPTS = 25;
+
+function osLog(msg, level){
+  console.log("[OneSignal]", msg);
+  const el = document.getElementById("fcmStatusText");
+  if(el){
+    el.textContent = msg;
+    const badge = document.getElementById("fcmStatusBadge");
+    if(badge){
+      badge.className = "fcm-badge " + (level || "wait");
+      const icon = level === "ok" ? "✓" : level === "err" ? "✗" : "…";
+      badge.textContent = icon + " OneSignal";
+    }
+  }
+}
+
+function getOS(){
+  try{
+    if(window.plugins && window.plugins.OneSignal) return window.plugins.OneSignal;
+    if(window.OneSignal) return window.OneSignal;
+    return null;
+  }catch(e){ return null; }
+}
+
+async function initFCM(uid){
+  if(!uid){ osLog("No UID", "err"); return "no-uid"; }
+
+  if(!window.Capacitor){
+    osLog("Waiting for Capacitor…", "wait");
+    return "no-capacitor";
+  }
+
+  const OS = getOS();
+  if(!OS){
+    osLog("OneSignal plugin NOT loaded yet…", "wait");
+    return "no-plugin";
+  }
+
+  try{
+    if(!__osInit){
+      try{
+        if(OS.setAppId) OS.setAppId(ONESIGNAL_APP_ID);
+        if(OS.initialize) OS.initialize(ONESIGNAL_APP_ID);
+      }catch(e){ console.warn("init", e); }
+
+      try{
+        OS.Notifications.addEventListener('click', (e) => console.log("👆 OS click:", e));
+        OS.Notifications.addEventListener('foregroundWillDisplay', (e) => {
+          try{
+            const n = e.getNotification();
+            showBanner(n.title || "Notification", n.body || "", "info");
+          }catch(err){}
+        });
+        OS.Notifications.addEventListener('permissionChange', (g) => {
+          osLog(g ? "Permission granted ✓" : "Permission denied", g ? "ok" : "err");
+        });
+      }catch(e){ console.warn("listeners", e); }
+
+      try{
+        if(OS.Notifications && OS.Notifications.requestPermission){
+          OS.Notifications.requestPermission(true);
+        }
+      }catch(e){}
+
+      __osInit = true;
+      osLog("OneSignal initialized ✓", "ok");
+    }
+
+    if(!__osLoggedIn && OS.login){
+      try{
+        await OS.login(uid);
+        __osLoggedIn = true;
+        osLog("Logged in as " + uid.substring(0, 8) + "…", "ok");
+      }catch(e){
+        console.warn("login err:", e);
+        osLog("Login retrying…", "wait");
+        return "retry";
+      }
+    }
+
+    try{
+      await db.collection("users").doc(uid).set({
+        fcmToken: "onesignal:" + uid,
+        fcmUpdatedAt: FV.serverTimestamp(),
+        platform: "android",
+        pushProvider: "onesignal"
+      }, {merge: true});
+    }catch(e){}
+
+    return "ok";
+  }catch(e){
+    console.error("OneSignal error:", e);
+    osLog("Error: " + (e.message || "unknown"), "err");
+    return "error";
+  }
+}
+
+function startOSRetry(uid){
+  if(__osLoggedIn) return;
+  if(__osAttempts >= OS_MAX_ATTEMPTS){
+    osLog("Max retries reached. Tap Retry.", "err");
+    return;
+  }
+  __osAttempts++;
+  const delay = Math.min(20000, 1500 * Math.pow(1.35, __osAttempts));
+  setTimeout(async ()=>{
+    const r = await initFCM(uid);
+    if(!__osLoggedIn && r !== "denied"){
+      startOSRetry(uid);
+    }
+  }, delay);
+}
+
+function logoutFCM(){
+  try{
+    __osInit = false;
+    __osLoggedIn = false;
+    __osAttempts = 0;
+    const OS = getOS();
+    if(OS && OS.logout) OS.logout();
+  }catch(e){}
+}
+
+async function manualRetryFCM(){
+  if(!S.user){ toast("Login first", "err"); return; }
+  __osAttempts = 0;
+  __osInit = false;
+  __osLoggedIn = false;
+  osLog("Manual retry…", "wait");
+  const r = await initFCM(S.user.uid);
+  if(!__osLoggedIn) startOSRetry(S.user.uid);
+  toast(r === "ok" ? "✅ OneSignal OK" : "Retrying…", r === "ok" ? "ok" : "");
+}
+window.manualRetryFCM = manualRetryFCM;
+
+/* Preload logo */
 (function preloadLogo(){
   const el = document.getElementById("authLogo");
   if(!el) return;
@@ -587,187 +731,6 @@ const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d
   });
 })();
 
-/* ════════════════════════════════════════════════════════════════
-   FCM PUSH NOTIFICATION SYSTEM v2.2 — ROBUST
-   ════════════════════════════════════════════════════════════════ */
-let __fcmToken = null;
-let __fcmInitialized = false;
-let __fcmRetryCount = 0;
-let __fcmStatusMsg = "Not started";
-let __fcmStatusLevel = "wait"; // wait | ok | err
-const FCM_MAX_RETRY = 20;
-
-function fcmLog(msg, level){
-  console.log("[FCM]", msg);
-  __fcmStatusMsg = msg;
-  __fcmStatusLevel = level || "wait";
-  const el = document.getElementById("fcmStatusText");
-  if(el){
-    el.textContent = msg;
-    const badge = document.getElementById("fcmStatusBadge");
-    if(badge){
-      badge.className = "fcm-badge " + __fcmStatusLevel;
-      const icon = __fcmStatusLevel === "ok" ? "✓" : __fcmStatusLevel === "err" ? "✗" : "…";
-      badge.textContent = icon + " FCM";
-    }
-  }
-}
-
-function getPushPlugin(){
-  try{
-    const C = window.Capacitor;
-    if(!C) return null;
-    if(C.Plugins && C.Plugins.PushNotifications) return C.Plugins.PushNotifications;
-    if(C.Plugins && C.Plugins['PushNotifications']) return C.Plugins['PushNotifications'];
-    return null;
-  }catch(e){ return null; }
-}
-
-async function initFCM(uid){
-  if(!uid){ fcmLog("No UID", "err"); return "no-uid"; }
-
-  if(__fcmToken){
-    await saveFCMToken(uid, __fcmToken);
-    fcmLog("Token saved (cached)", "ok");
-    return "cached";
-  }
-
-  if(!window.Capacitor){
-    fcmLog("Waiting for Capacitor…", "wait");
-    return "no-capacitor";
-  }
-
-  const PN = getPushPlugin();
-  if(!PN){
-    fcmLog("PushNotifications plugin NOT registered", "err");
-    return "no-plugin";
-  }
-
-  fcmLog("Plugin found — setting up listeners", "wait");
-
-  if(!__fcmInitialized){
-    try{ await PN.removeAllListeners(); }catch(e){}
-
-    PN.addListener('registration', async (token) => {
-      console.log("🔑 FCM Token:", token.value);
-      __fcmToken = token.value;
-      fcmLog("Token received from FCM ✓", "ok");
-      if(window.__currentUid){
-        await saveFCMToken(window.__currentUid, token.value);
-      }
-    });
-
-    PN.addListener('registrationError', (err) => {
-      console.error("❌ FCM registration error:", err);
-      fcmLog("Registration error: " + JSON.stringify(err), "err");
-    });
-
-    PN.addListener('pushNotificationReceived', (notification) => {
-      console.log("🔔 FCM received:", notification);
-      showBanner(
-        notification.title || "Notification",
-        notification.body || "",
-        (notification.data && notification.data.type) || "info"
-      );
-    });
-
-    PN.addListener('pushNotificationActionPerformed', (action) => {
-      console.log("👆 Notification clicked:", action);
-    });
-
-    __fcmInitialized = true;
-  }
-
-  try{
-    let perm;
-    try{
-      perm = await PN.checkPermissions();
-    }catch(e){
-      perm = await PN.requestPermissions();
-    }
-
-    if(!perm || perm.receive !== 'granted'){
-      fcmLog("Requesting notification permission…", "wait");
-      perm = await PN.requestPermissions();
-    }
-
-    if(!perm || perm.receive !== 'granted'){
-      fcmLog("Permission DENIED — enable in Settings", "err");
-      return "denied";
-    }
-
-    fcmLog("Permission OK — calling register()", "wait");
-    await PN.register();
-    fcmLog("register() called — waiting for token…", "wait");
-    return "registering";
-  }catch(e){
-    console.error("FCM init error:", e);
-    fcmLog("Error: " + (e.message || "unknown"), "err");
-    return "error";
-  }
-}
-
-function startFCMRetryLoop(uid){
-  if(__fcmToken) return;
-  if(__fcmRetryCount >= FCM_MAX_RETRY){
-    fcmLog("Max retries reached. Tap Retry in Profile.", "err");
-    return;
-  }
-  __fcmRetryCount++;
-  const delay = Math.min(30000, 1500 * Math.pow(1.4, __fcmRetryCount));
-  setTimeout(async ()=>{
-    const r = await initFCM(uid);
-    if(!__fcmToken && r !== "denied"){
-      startFCMRetryLoop(uid);
-    } else if(!__fcmToken && r === "denied"){
-      fcmLog("Stopped — permission denied", "err");
-    }
-  }, delay);
-}
-
-async function saveFCMToken(uid, token){
-  if(!uid || !token) return;
-  try{
-    await db.collection("users").doc(uid).set({
-      fcmToken: token,
-      fcmUpdatedAt: FV.serverTimestamp(),
-      platform: "android"
-    }, {merge: true});
-    console.log("✅ FCM token saved to Firestore");
-    fcmLog("Token saved to Firestore ✓", "ok");
-  }catch(e){
-    console.warn("Save FCM failed:", e);
-    fcmLog("Firestore save failed: " + (e.code || e.message), "err");
-  }
-}
-
-function logoutFCM(){
-  try{
-    __fcmToken = null;
-    __fcmInitialized = false;
-    __fcmRetryCount = 0;
-    fcmLog("Logged out from FCM", "wait");
-    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications){
-      const PN = window.Capacitor.Plugins.PushNotifications;
-      if(PN.removeAllListeners) PN.removeAllListeners();
-    }
-  }catch(e){}
-}
-
-async function manualRetryFCM(){
-  if(!S.user){ toast("Login first", "err"); return; }
-  __fcmRetryCount = 0;
-  __fcmInitialized = false;
-  __fcmToken = null;
-  fcmLog("Manual retry started…", "wait");
-  const r = await initFCM(S.user.uid);
-  if(!__fcmToken && r !== "denied"){
-    startFCMRetryLoop(S.user.uid);
-  }
-  toast("FCM retry initiated", "ok");
-}
-window.manualRetryFCM = manualRetryFCM;
-
 /* Auto-login */
 (function(){
   try{
@@ -779,7 +742,6 @@ window.manualRetryFCM = manualRetryFCM;
   }catch(e){}
 })();
 
-/* State */
 const S = {
   user:null, data:null,
   matchId:null, chatMatchId:null,
@@ -914,10 +876,12 @@ auth.onAuthStateChanged(async u=>{
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
 
-    __fcmRetryCount = 0;
-    fcmLog("Starting FCM init…", "wait");
-    setTimeout(()=>{ try{ initFCM(u.uid) }catch(e){} }, 500);
-    startFCMRetryLoop(u.uid);
+    __osAttempts = 0;
+    osLog("Starting OneSignal init…", "wait");
+    setTimeout(()=>{ try{ initFCM(u.uid) }catch(e){} }, 800);
+    setTimeout(()=>{ try{ initFCM(u.uid) }catch(e){} }, 2500);
+    setTimeout(()=>{ try{ initFCM(u.uid) }catch(e){} }, 5000);
+    startOSRetry(u.uid);
 
     renderDrawer();
     loadBranding();
@@ -1723,7 +1687,7 @@ async function loadProfile(){
     h+='<div class="profile-name">'+esc(name)+'</div>';
     h+='<div class="profile-id">ID: '+esc(S.user.uid.substring(0,12))+'</div>';
     h+='<div class="profile-status"><span class="dot"></span>ONLINE</div>';
-    h+='<div style="margin-top:10px"><span id="fcmStatusBadge" class="fcm-badge '+__fcmStatusLevel+'">FCM</span></div>';
+    h+='<div style="margin-top:10px"><span id="fcmStatusBadge" class="fcm-badge wait">… OneSignal</span></div>';
     h+='<div class="profile-stats">';
     h+='<div class="ps-item gr"><div class="v">'+wins+'</div><div class="k">Wins</div></div>';
     h+='<div class="ps-item rd"><div class="v">'+losses+'</div><div class="k">Losses</div></div>';
@@ -1735,9 +1699,9 @@ async function loadProfile(){
     h+='<div class="stat-bar"><div style="width:'+Math.min(100,parseFloat(avg)*20)+'%"></div></div>';
     h+='<div class="stat-line" style="margin-top:4px"><span class="lbl">Balance</span><span class="val">৳'+money(bal)+'</span></div></div></div>';
     h+='<div class="card" style="border-color:var(--line2)">';
-    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b style="font-size:13px">🔔 Push Notification</b><span class="fcm-badge '+__fcmStatusLevel+'" id="fcmStatusBadge2">FCM</span></div>';
-    h+='<div id="fcmStatusText" style="font-size:11.5px;color:#c5d3e1;line-height:1.6;word-break:break-word">'+esc(__fcmStatusMsg)+'</div>';
-    h+='<button class="btn btn-ghost full sm" style="margin-top:10px" onclick="manualRetryFCM()">🔄 Retry FCM Registration</button>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><b style="font-size:13px">🔔 Push Notification</b><span class="fcm-badge wait" id="fcmStatusBadge2">… OneSignal</span></div>';
+    h+='<div id="fcmStatusText" style="font-size:11.5px;color:#c5d3e1;line-height:1.6;word-break:break-word">Initializing…</div>';
+    h+='<button class="btn btn-ghost full sm" style="margin-top:10px" onclick="manualRetryFCM()">🔄 Retry OneSignal</button>';
     h+='</div>';
     h+='<div class="menu-list">';
     h+='<div class="menu-item" onclick="openAvatarPicker()"><span class="ic">🎨</span><span style="flex:1">Change Avatar</span><span class="arrow">›</span></div>';
@@ -1748,7 +1712,7 @@ async function loadProfile(){
     h+='<div class="menu-item" onclick="go(\'help\')"><span class="ic">📖</span><span style="flex:1">Help & Rules</span><span class="arrow">›</span></div>';
     h+='<div class="menu-item danger" onclick="doLogout()"><span class="ic">🚪</span><span style="flex:1">Logout</span><span class="arrow">›</span></div></div>';
     box.innerHTML=h;
-    fcmLog(__fcmStatusMsg, __fcmStatusLevel);
+    osLog(__osLoggedIn ? "OneSignal registered ✓" : "Waiting for OneSignal…", __osLoggedIn ? "ok" : "wait");
   }catch(e){console.error(e);box.innerHTML='<div class="empty">Load failed</div>'}
 }
 window.loadProfile=loadProfile;
@@ -2007,7 +1971,7 @@ document.querySelectorAll(".modal").forEach(m=>{
   m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("show")});
 });
 
-console.log("✅ OUR EFOOTBALL TOUR v2.2 — FCM Enhanced build loaded");
+console.log("✅ OUR EFOOTBALL TOUR v3.0 — OneSignal build loaded");
 </script>
 </body>
 </html>
