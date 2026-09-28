@@ -1,6 +1,6 @@
 {
   "appId": "com.ourefootballtour.app",
-  "appName": "OUR EFOOTBALL TOUR",
+  "appName": "OUR TOUR",
   "webDir": "www",
   "plugins": {
     "OneSignal": { "appId": "58a1aed9-0e82-4063-8da0-bd9f19dc1b94" }
