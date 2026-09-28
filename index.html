@@ -553,7 +553,7 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 
 <script>
 /* ================================================================
-   OUR EFOOTBALL TOUR v2.1 — CLEAN BUILD
+   OUR EFOOTBALL TOUR v2.2 — CLEAN BUILD (FCM + Default Avatars)
    ================================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyBgeeZtY-q5AN7JwuXFF5sBoTM9VU7ono8",
@@ -572,6 +572,42 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
 
 const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png";
 
+/* ═══ Default Avatars (DiceBear) — Firestore এ avatar না থাকলে এগুলো দেখাবে ═══ */
+const DEFAULT_AVATARS = [
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Milo&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/adventurer/svg?seed=Luna&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/avataaars/svg?seed=Max&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/avataaars/svg?seed=Zoe&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/avataaars/svg?seed=Leo&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/avataaars/svg?seed=Ivy&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/big-ears/svg?seed=Rio&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/big-ears/svg?seed=Mia&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Robo1&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/bottts/svg?seed=Robo2&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Happy&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/fun-emoji/svg?seed=Cool&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/lorelei/svg?seed=Sara&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/lorelei/svg?seed=Nora&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/micah/svg?seed=Aiden&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/micah/svg?seed=Emma&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/miniavs/svg?seed=Kai&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/miniavs/svg?seed=Zara&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/notionists/svg?seed=Alex&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/notionists/svg?seed=Sam&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/open-peeps/svg?seed=John&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/open-peeps/svg?seed=Jane&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/personas/svg?seed=Chris&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/personas/svg?seed=Lily&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/pixel-art/svg?seed=Player1&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/pixel-art/svg?seed=Player2&backgroundColor=d1d4f9",
+  "https://api.dicebear.com/7.x/thumbs/svg?seed=Winner&backgroundColor=b6e3f4",
+  "https://api.dicebear.com/7.x/thumbs/svg?seed=Champ&backgroundColor=ffd5dc",
+  "https://api.dicebear.com/7.x/croodles/svg?seed=Star&backgroundColor=c0aede",
+  "https://api.dicebear.com/7.x/croodles/svg?seed=Pro&backgroundColor=d1d4f9"
+];
+
 /* ═══ Preload logo ═══ */
 (function preloadLogo(){
   const el = document.getElementById("authLogo");
@@ -586,81 +622,100 @@ const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d
 })();
 
 /* ════════════════════════════════════════════════════════════════
-   ONESIGNAL
+   FCM PUSH NOTIFICATION SYSTEM
    ════════════════════════════════════════════════════════════════ */
-const ONESIGNAL_APP_ID = "58a1aed9-0e82-4063-8da0-bd9f19dc1b94";
-let __osReady = false;
-let __osExternalId = null;
+let __fcmToken = null;
+let __fcmInitialized = false;
 
-function initOneSignal(uid){
+async function initFCM(uid){
   try{
-    if(window.plugins && window.plugins.OneSignal){
-      const OS = window.plugins.OneSignal;
-      // Native SDK initialized from MainActivity — just login
-      if(uid){
-        try{
-          if(typeof OS.login === "function") OS.login(uid);
-          else if(typeof OS.setExternalUserId === "function") OS.setExternalUserId(uid);
-          __osExternalId = uid;
-          console.log("✅ OneSignal login:", uid);
-        }catch(e){ console.warn("OS login:", e); }
+    if(!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.PushNotifications){
+      console.log("⏳ FCM plugin not ready — will retry");
+      return "not-ready";
+    }
+
+    const PushNotifications = window.Capacitor.Plugins.PushNotifications;
+
+    if(__fcmInitialized){
+      if(__fcmToken && uid){
+        await saveFCMToken(uid, __fcmToken);
       }
-      // Request permission
-      try{
-        if(OS.Notifications && typeof OS.Notifications.requestPermission === "function"){
-          OS.Notifications.requestPermission(true).catch(err => console.warn("Permission:", err));
-        } else if(typeof OS.promptForPushNotificationsWithUserResponse === "function"){
-          OS.promptForPushNotificationsWithUserResponse(() => {});
-        }
-      }catch(e){}
-      __osReady = true;
-      return "cordova";
+      return "already";
     }
-    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.OneSignal){
-      const COS = window.Capacitor.Plugins.OneSignal;
-      if(uid) COS.login({ externalId: uid });
-      __osReady = true;
-      __osExternalId = uid;
-      return "capacitor";
+
+    try{ await PushNotifications.removeAllListeners(); }catch(e){}
+
+    PushNotifications.addListener('registration', async (token) => {
+      console.log("🔑 FCM Token:", token.value);
+      __fcmToken = token.value;
+      if(window.__currentUid){
+        await saveFCMToken(window.__currentUid, token.value);
+      }
+    });
+
+    PushNotifications.addListener('registrationError', (err) => {
+      console.error("❌ FCM error:", err);
+    });
+
+    PushNotifications.addListener('pushNotificationReceived', (notification) => {
+      console.log("🔔 FCM received:", notification);
+      showBanner(
+        notification.title || "Notification",
+        notification.body || "",
+        (notification.data && notification.data.type) || "info"
+      );
+    });
+
+    PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      console.log("👆 Notification clicked:", action);
+    });
+
+    let permStatus;
+    try{
+      permStatus = await PushNotifications.requestPermissions();
+    }catch(e){
+      permStatus = {receive: "denied"};
     }
-    if(window.AppMint && window.AppMint.OneSignal){
-      if(uid) window.AppMint.OneSignal.login(uid).catch(()=>{});
-      window.AppMint.OneSignal.requestPermission().catch(()=>{});
-      return "appmint";
+
+    if(permStatus.receive === 'granted'){
+      await PushNotifications.register();
+      console.log("✅ FCM registered");
+      __fcmInitialized = true;
+      return "ok";
+    } else {
+      console.warn("❌ Permission denied");
+      return "denied";
     }
-    return "none";
-  }catch(e){ console.error("OS error:", e); return "error"; }
+  }catch(e){
+    console.error("FCM error:", e);
+    return "error";
+  }
 }
 
-function logoutOneSignal(){
+async function saveFCMToken(uid, token){
+  if(!uid || !token) return;
   try{
-    if(window.plugins && window.plugins.OneSignal){
-      const OS = window.plugins.OneSignal;
-      if(typeof OS.logout === "function") OS.logout();
-      else if(typeof OS.removeExternalUserId === "function") OS.removeExternalUserId();
-    } else if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.OneSignal){
-      window.Capacitor.Plugins.OneSignal.logout && window.Capacitor.Plugins.OneSignal.logout();
-    } else if(window.AppMint && window.AppMint.OneSignal){
-      window.AppMint.OneSignal.logout();
+    await db.collection("users").doc(uid).set({
+      fcmToken: token,
+      fcmUpdatedAt: FV.serverTimestamp(),
+      platform: "android"
+    }, {merge: true});
+    console.log("✅ FCM token saved");
+  }catch(e){
+    console.warn("Save FCM failed:", e);
+  }
+}
+
+function logoutFCM(){
+  try{
+    __fcmToken = null;
+    __fcmInitialized = false;
+    if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications){
+      const PN = window.Capacitor.Plugins.PushNotifications;
+      if(PN.removeAllListeners) PN.removeAllListeners();
     }
-    __osExternalId = null;
   }catch(e){}
 }
-
-document.addEventListener("deviceready", function(){
-  console.log("✅ Cordova deviceready");
-  if(window.plugins && window.plugins.OneSignal){
-    __osReady = true;
-    // Re-login if we already have UID
-    if(__osExternalId){
-      try{
-        const OS = window.plugins.OneSignal;
-        if(typeof OS.login === "function") OS.login(__osExternalId);
-        else if(typeof OS.setExternalUserId === "function") OS.setExternalUserId(__osExternalId);
-      }catch(e){}
-    }
-  }
-}, false);
 
 /* Auto-login */
 (function(){
@@ -715,7 +770,7 @@ function doLogout(){
   closeDrawer();
   if(!confirm("Log out?"))return;
   try{localStorage.removeItem("eft_email");localStorage.removeItem("eft_pass")}catch(e){}
-  logoutOneSignal();
+  logoutFCM();
   auth.signOut();
 }
 window.doLogout=doLogout;
@@ -809,10 +864,10 @@ auth.onAuthStateChanged(async u=>{
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
 
-    // OneSignal init — 3 attempts
-    try{initOneSignal(u.uid)}catch(e){}
-    setTimeout(()=>{try{initOneSignal(u.uid)}catch(e){}},2000);
-    setTimeout(()=>{try{initOneSignal(u.uid)}catch(e){}},6000);
+    // FCM init — 3 attempts
+    setTimeout(()=>{try{initFCM(u.uid)}catch(e){}},1500);
+    setTimeout(()=>{try{initFCM(u.uid)}catch(e){}},4000);
+    setTimeout(()=>{try{initFCM(u.uid)}catch(e){}},8000);
 
     renderDrawer();
     loadBranding();
@@ -1678,22 +1733,61 @@ async function saveProfile(){
 }
 window.saveProfile=saveProfile;
 
+/* ════════════════════════════════════════════════════════════════
+   AVATAR PICKER — Firestore এ avatar থাকলে সেগুলো, না থাকলে ডিফল্ট
+   ════════════════════════════════════════════════════════════════ */
 async function openAvatarPicker(){
   S.avatarSel="";
   openModal("avatarModal");
   const grid=$("avatarGrid");
   grid.innerHTML='<div class="skeleton" style="grid-column:1/-1;height:200px"></div>';
+
+  // Build list — Firestore avatar + default avatar
+  let list = [];
+
   try{
-    const snap=await db.collection("avatars").where("active","==",true).limit(200).get({source:"server"});
-    if(snap.empty){grid.innerHTML='<div class="empty" style="grid-column:1/-1"><span class="ic">🎨</span>No avatars available</div>';return}
-    let h="";
+    const snap = await db.collection("avatars").where("active","==",true).limit(200).get({source:"server"});
     snap.forEach(doc=>{
-      const a=doc.data();
-      if(!a.url)return;
-      h+='<div class="avatar-item" data-url="'+esc(a.url)+'" onclick="pickAvatar(this)"><img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'"></div>';
+      const a = doc.data();
+      if(a && a.url) list.push(a.url);
     });
-    grid.innerHTML=h||'<div class="empty" style="grid-column:1/-1">No avatars available</div>';
-  }catch(e){console.error(e);grid.innerHTML='<div class="empty" style="grid-column:1/-1">Load failed</div>'}
+  }catch(e){ console.warn("Avatar DB load failed:", e); }
+
+  // Firestore এ কোনো avatar না থাকলে default avatar গুলো add করো
+  if(list.length === 0){
+    list = DEFAULT_AVATARS.slice();
+  } else {
+    // কিছু ডিফল্ট avatar সাথে add করো (variety এর জন্য)
+    // চাইলে বাদ দিতে পারেন — এখন আছে যাতে সবসময় ভরাট দেখায়
+    // list = list.concat(DEFAULT_AVATARS.slice(0, 8));
+  }
+
+  if(list.length === 0){
+    grid.innerHTML='<div class="empty" style="grid-column:1/-1"><span class="ic">🎨</span>No avatars available</div>';
+    return;
+  }
+
+  let h="";
+  list.forEach(url=>{
+    h+='<div class="avatar-item" data-url="'+esc(url)+'" onclick="pickAvatar(this)">';
+    h+='<img src="'+esc(url)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentElement.style.display=\'none\'">';
+    h+='</div>';
+  });
+  grid.innerHTML=h;
+
+  // Check if all images failed → show defaults
+  setTimeout(()=>{
+    const visible = grid.querySelectorAll('.avatar-item:not([style*="display: none"])').length;
+    if(visible === 0){
+      let dh="";
+      DEFAULT_AVATARS.forEach(url=>{
+        dh+='<div class="avatar-item" data-url="'+esc(url)+'" onclick="pickAvatar(this)">';
+        dh+='<img src="'+esc(url)+'" loading="lazy" referrerpolicy="no-referrer">';
+        dh+='</div>';
+      });
+      grid.innerHTML=dh;
+    }
+  }, 2500);
 }
 window.openAvatarPicker=openAvatarPicker;
 
@@ -1896,7 +1990,7 @@ document.querySelectorAll(".modal").forEach(m=>{
   m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("show")});
 });
 
-console.log("✅ OUR EFOOTBALL TOUR v2.1 — Clean build loaded");
+console.log("✅ OUR EFOOTBALL TOUR v2.2 — Clean build loaded (FCM + Default Avatars)");
 </script>
 </body>
 </html>
