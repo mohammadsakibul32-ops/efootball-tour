@@ -45,40 +45,11 @@ jobs:
         run: |
           npm install @capacitor/splash-screen@6 @capacitor/status-bar@6 @capacitor/app@6
 
-      - name: Install OneSignal
-        run: |
-          npm install onesignal-cordova-plugin@5 --legacy-peer-deps
+      - name: Install OneSignal Cordova plugin
+        run: npm install onesignal-cordova-plugin@5 --legacy-peer-deps
 
       - name: Init Capacitor
         run: npx cap init "OUR TOUR" "com.ourefootballtour.app" --web-dir www
-
-      - name: Create capacitor.config.json
-        run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.ourefootballtour.app",
-            "appName": "OUR TOUR",
-            "webDir": "www",
-            "bundledWebRuntime": false,
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 2000,
-                "launchAutoHide": true,
-                "backgroundColor": "#05070e",
-                "androidSplashResourceName": "splash",
-                "androidScaleType": "CENTER_CROP",
-                "showSpinner": false,
-                "androidSpinnerStyle": "large",
-                "spinnerColor": "#22d3ee",
-                "splashFullScreen": true,
-                "splashImmersive": true
-              },
-              "OneSignal": {
-                "appId": "58a1aed9-0e82-4063-8da0-bd9f19dc1b94"
-              }
-            }
-          }
-          EOF
 
       - name: Add Android Platform
         run: |
@@ -94,7 +65,6 @@ jobs:
           
           RES=android/app/src/main/res
           
-          # App launcher icons
           for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
@@ -104,8 +74,7 @@ jobs:
             cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png"
           done
           
-          # Splash screens (Capacitor splash plugin uses drawable/splash.png)
-          for entry in "480:drawable" "720:drawable-land-hdpi" "720:drawable-port-hdpi" "1080:drawable-land-xhdpi" "1080:drawable-port-xhdpi" "1440:drawable-land-xxhdpi" "1440:drawable-port-xxhdpi" "1920:drawable-land-xxxhdpi" "1920:drawable-port-xxxhdpi"; do
+          for entry in "480:drawable" "720:drawable-hdpi" "1080:drawable-xhdpi" "1440:drawable-xxhdpi" "1920:drawable-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
             mkdir -p "$RES/$FOLDER"
@@ -116,12 +85,10 @@ jobs:
               "$RES/$FOLDER/splash.png"
           done
           
-          # Remove adaptive icons (forces legacy icon)
           rm -f $RES/mipmap-anydpi-v26/ic_launcher.xml || true
           rm -f $RES/mipmap-anydpi-v26/ic_launcher_round.xml || true
           
-          echo "=== Icons generated ==="
-          ls -la $RES/drawable/
+          echo "=== Icons done ==="
 
       - name: Copy google-services
         run: |
@@ -136,10 +103,13 @@ jobs:
           
           path = "android/app/src/main/AndroidManifest.xml"
           
+          if not os.path.exists(path):
+              print("Manifest not found!")
+              exit(1)
+          
           with open(path) as f:
               c = f.read()
           
-          # Add permissions
           if "POST_NOTIFICATIONS" not in c:
               c = c.replace("</manifest>", 
                   '    <uses-permission android:name="android.permission.INTERNET" />\n'
@@ -150,7 +120,6 @@ jobs:
                   '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
                   '</manifest>', 1)
           
-          # Add OneSignal meta-data inside <application>
           if "onesignal_app_id" not in c:
               m = re.search(r'(<application[^>]*>)', c)
               if m:
@@ -161,46 +130,7 @@ jobs:
               f.write(c)
           
           print("=== Manifest updated ===")
-          print(c[:500])
           PYEOF
-
-      - name: Register OneSignal in MainActivity
-        run: |
-          # Find MainActivity
-          MAIN=$(find android/app/src/main/java -name "MainActivity.java" | head -1)
-          echo "MainActivity: $MAIN"
-          
-          if [ -z "$MAIN" ]; then
-            echo "MainActivity not found, skipping"
-            exit 0
-          fi
-          
-          cat > "$MAIN" << 'EOF'
-          package com.ourefootballtour.app;
-
-          import com.getcapacitor.BridgeActivity;
-          import android.os.Bundle;
-          import com.onesignal.OneSignal;
-
-          public class MainActivity extends BridgeActivity {
-              @Override
-              public void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  
-                  // Enable verbose logging for debugging (remove in production)
-                  OneSignal.setLogLevel(OneSignal.LOG_LEVEL.VERBOSE, OneSignal.LOG_LEVEL.NONE);
-                  
-                  // Initialize OneSignal
-                  OneSignal.initWithContext(this, "58a1aed9-0e82-4063-8da0-bd9f19dc1b94");
-                  
-                  // Request notification permission (Android 13+)
-                  OneSignal.getNotifications().requestPermission(false, OneSignal.NotificationPermissionCallback.NO_OP);
-              }
-          }
-          EOF
-          
-          echo "=== MainActivity updated ==="
-          cat "$MAIN"
 
       - name: Add OneSignal Gradle dependency
         run: |
@@ -212,10 +142,30 @@ jobs:
           with open('$GRADLE','w') as f: f.write(c)
           "
           fi
-          grep -A 5 "^dependencies {" "$GRADLE" | head -8
 
-      - name: Final sync
-        run: npx cap sync android
+      - name: Update capacitor config
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.ourefootballtour.app",
+            "appName": "OUR TOUR",
+            "webDir": "www",
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "launchAutoHide": true,
+                "backgroundColor": "#05070e",
+                "androidScaleType": "CENTER_CROP",
+                "showSpinner": false,
+                "androidSplashResourceName": "splash"
+              },
+              "OneSignal": {
+                "appId": "58a1aed9-0e82-4063-8da0-bd9f19dc1b94"
+              }
+            }
+          }
+          EOF
+          npx cap sync android
 
       - name: Build APK
         run: |
