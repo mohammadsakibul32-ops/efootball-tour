@@ -31,21 +31,35 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Verify Android SDK is available
+      - name: Verify Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          ls -la "$ANDROID_HOME" || true
-          ls -la "$ANDROID_HOME/cmdline-tools" || true
-          which sdkmanager || true
-          echo "--- sdkmanager version ---"
-          sdkmanager --version || true
-          echo "--- Accepting licenses ---"
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          echo "--- Available platforms ---"
-          ls "$ANDROID_HOME/platforms" || true
 
       - name: Install ImageMagick
         run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Verify icon files present
+        run: |
+          echo "=== Repo root files ==="
+          ls -la
+          echo "=== Check icons ==="
+          if [ -f icon.png ]; then echo "✅ icon.png FOUND"; ls -la icon.png; file icon.png; fi
+          if [ -f efcon.png ]; then echo "✅ efcon.png FOUND"; ls -la efcon.png; file efcon.png; fi
+          if [ ! -f icon.png ] && [ ! -f efcon.png ]; then
+            echo "❌ NO ICON FILE FOUND"
+          fi
+
+      - name: Download icon if missing
+        run: |
+          if [ ! -f icon.png ] && [ ! -f efcon.png ]; then
+            echo "📥 Downloading default icon…"
+            curl -L -o icon.png "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png" || true
+          fi
+          if [ -f efcon.png ] && [ ! -f icon.png ]; then
+            cp efcon.png icon.png
+          fi
+          ls -la icon.png
 
       - name: Prepare www folder
         run: |
@@ -57,7 +71,7 @@ jobs:
         run: |
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-          npm install @capacitor/push-notifications@6
+          npm install onesignal-cordova-plugin@5
           npm install @capacitor/splash-screen@6
           npm install @capacitor/status-bar@6
           npm install @capacitor/app@6
@@ -74,9 +88,6 @@ jobs:
               "androidScheme": "https"
             },
             "plugins": {
-              "PushNotifications": {
-                "presentationOptions": ["badge", "sound", "alert"]
-              },
               "SplashScreen": {
                 "launchShowDuration": 2000,
                 "launchAutoHide": true,
@@ -106,10 +117,8 @@ jobs:
           if [ -f google-services.json ]; then
             cp google-services.json android/app/google-services.json
             echo "✅ google-services.json copied"
-            echo "--- Package name in file ---"
-            grep -o '"package_name"[^,]*' google-services.json || true
           else
-            echo "❌ google-services.json NOT FOUND in repo root!"
+            echo "❌ google-services.json NOT FOUND!"
             exit 1
           fi
 
@@ -118,12 +127,7 @@ jobs:
           GRADLE_FILE=android/build.gradle
           if ! grep -q "com.google.gms:google-services" "$GRADLE_FILE"; then
             sed -i "/dependencies {/a\\        classpath 'com.google.gms:google-services:4.4.2'" "$GRADLE_FILE"
-            echo "✅ Added google-services classpath"
-          else
-            echo "ℹ️ classpath already present"
           fi
-          echo "--- build.gradle dependencies section ---"
-          grep -A 10 "dependencies {" "$GRADLE_FILE" || true
 
       - name: Inject Google Services plugin — android/app/build.gradle
         run: |
@@ -131,31 +135,17 @@ jobs:
           if ! grep -q "com.google.gms.google-services" "$APP_GRADLE"; then
             echo "" >> "$APP_GRADLE"
             echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
-            echo "✅ Added google-services apply plugin"
-          else
-            echo "ℹ️ apply plugin already present"
           fi
-          echo "--- last lines of app/build.gradle ---"
-          tail -5 "$APP_GRADLE"
 
-      - name: Fix AndroidManifest — permissions & notification metadata
+      - name: Fix AndroidManifest
         run: |
           MF=android/app/src/main/AndroidManifest.xml
-          echo "--- ORIGINAL MANIFEST ---"
-          cat "$MF"
-
           if ! grep -q "POST_NOTIFICATIONS" "$MF"; then
             sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <application|' "$MF"
-            echo "✅ Added permissions"
           fi
-
           if ! grep -q "default_notification_channel_id" "$MF"; then
             sed -i 's|</application>|    <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="default" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap/ic_launcher" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/colorPrimary" />\n    </application>|' "$MF"
-            echo "✅ Added FCM meta-data"
           fi
-
-          echo "--- FINAL MANIFEST ---"
-          cat "$MF"
 
       - name: Add colorPrimary to colors.xml
         run: |
@@ -170,67 +160,96 @@ jobs:
               <color name="colorAccent">#22d3ee</color>
           </resources>
           EOF
-            echo "✅ colors.xml created"
-          else
-            if ! grep -q "colorPrimary" "$COLORS"; then
-              sed -i 's|</resources>|    <color name="colorPrimary">#05070e</color>\n    <color name="colorPrimaryDark">#05070e</color>\n    <color name="colorAccent">#22d3ee</color>\n</resources>|' "$COLORS"
-              echo "✅ colorPrimary added"
-            fi
           fi
-          cat "$COLORS"
 
-      - name: Generate Icons & Splash
+      - name: Generate Icons
         run: |
           set -e
-
-          if [ -f icon.png ]; then
-            SRC=icon.png
-          elif [ -f efcon.png ]; then
-            SRC=efcon.png
-          else
-            echo "⚠️ No icon found — creating placeholder"
-            convert -size 512x512 xc:#05070e -fill '#22d3ee' -gravity center -pointsize 200 -annotate 0 "⚽" icon.png || convert -size 512x512 xc:#05070e icon.png
-            SRC=icon.png
+          SRC="icon.png"
+          if [ ! -f "$SRC" ]; then
+            echo "❌ icon.png missing"
+            exit 1
           fi
+          echo "=== Source icon info ==="
+          identify "$SRC" || file "$SRC"
+          ls -la "$SRC"
 
           RES=android/app/src/main/res
 
-          convert "$SRC" -resize 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
-          convert "$SRC" -resize 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
-          convert "$SRC" -resize 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
-          convert "$SRC" -resize 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
-          convert "$SRC" -resize 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
+          echo "=== Generating launcher icons ==="
+          convert "$SRC" -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
+          convert "$SRC" -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
+          convert "$SRC" -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
+          convert "$SRC" -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
+          convert "$SRC" -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
 
-          convert "$SRC" -resize 48x48   -alpha set -background none -gravity center -extent 48x48 "$RES/mipmap-mdpi/ic_launcher_round.png" || true
-          convert "$SRC" -resize 72x72   -alpha set -background none -gravity center -extent 72x72 "$RES/mipmap-hdpi/ic_launcher_round.png" || true
-          convert "$SRC" -resize 96x96   -alpha set -background none -gravity center -extent 96x96 "$RES/mipmap-xhdpi/ic_launcher_round.png" || true
-          convert "$SRC" -resize 144x144 -alpha set -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher_round.png" || true
-          convert "$SRC" -resize 192x192 -alpha set -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png" || true
+          echo "=== Generating round icons ==="
+          convert "$SRC" -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher_round.png"   || cp "$RES/mipmap-mdpi/ic_launcher.png"   "$RES/mipmap-mdpi/ic_launcher_round.png"
+          convert "$SRC" -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher_round.png"   || cp "$RES/mipmap-hdpi/ic_launcher.png"   "$RES/mipmap-hdpi/ic_launcher_round.png"
+          convert "$SRC" -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher_round.png"  || cp "$RES/mipmap-xhdpi/ic_launcher.png"  "$RES/mipmap-xhdpi/ic_launcher_round.png"
+          convert "$SRC" -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher_round.png" || cp "$RES/mipmap-xxhdpi/ic_launcher.png" "$RES/mipmap-xxhdpi/ic_launcher_round.png"
+          convert "$SRC" -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png"|| cp "$RES/mipmap-xxxhdpi/ic_launcher.png" "$RES/mipmap-xxxhdpi/ic_launcher_round.png"
 
+          echo "=== Generating foreground icons ==="
           for d in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
             DENSITY="${d%%:*}"; SIZE="${d##*:}"
             mkdir -p "$RES/mipmap-$DENSITY"
             convert "$SRC" -resize ${SIZE}x${SIZE} -background none -gravity center -extent ${SIZE}x${SIZE} "$RES/mipmap-$DENSITY/ic_launcher_foreground.png" || true
           done
 
-          for d in mdpi:480x800 hdpi:480x800 xhdpi:720x1280 xxhdpi:960x1600 xxxhdpi:1280x1920; do
-            DENSITY="${d%%:*}"; SIZE="${d##*:}"
-            W="${SIZE%%x*}"; H="${SIZE##*x}"
-            mkdir -p "$RES/drawable-$DENSITY"
-            convert -size ${W}x${H} xc:'#05070e' \
-              \( "$SRC" -resize $((W/2))x$((W/2)) \) -gravity center -composite \
-              "$RES/drawable-$DENSITY/splash.png"
-          done
+          echo "=== Verify generated files ==="
+          ls -la "$RES/mipmap-xxxhdpi/"
 
+      - name: Generate Splash Screens
+        run: |
+          set -e
+          SRC="icon.png"
+          RES=android/app/src/main/res
+
+          echo "=== Splash: creating dark background with centered logo ==="
+
+          # xxxhdpi (1280x1920)
+          mkdir -p "$RES/drawable-xxxhdpi"
+          convert -size 1280x1920 xc:'#05070e' \
+            \( "$SRC" -resize 640x640 \) -gravity center -composite \
+            "$RES/drawable-xxxhdpi/splash.png"
+
+          # xxhdpi (960x1600)
+          mkdir -p "$RES/drawable-xxhdpi"
+          convert -size 960x1600 xc:'#05070e' \
+            \( "$SRC" -resize 480x480 \) -gravity center -composite \
+            "$RES/drawable-xxhdpi/splash.png"
+
+          # xhdpi (720x1280)
+          mkdir -p "$RES/drawable-xhdpi"
+          convert -size 720x1280 xc:'#05070e' \
+            \( "$SRC" -resize 360x360 \) -gravity center -composite \
+            "$RES/drawable-xhdpi/splash.png"
+
+          # hdpi (480x800)
+          mkdir -p "$RES/drawable-hdpi"
+          convert -size 480x800 xc:'#05070e' \
+            \( "$SRC" -resize 240x240 \) -gravity center -composite \
+            "$RES/drawable-hdpi/splash.png"
+
+          # mdpi (320x480)
+          mkdir -p "$RES/drawable-mdpi"
+          convert -size 320x480 xc:'#05070e' \
+            \( "$SRC" -resize 160x160 \) -gravity center -composite \
+            "$RES/drawable-mdpi/splash.png"
+
+          # default drawable
           mkdir -p "$RES/drawable"
           cp "$RES/drawable-xxxhdpi/splash.png" "$RES/drawable/splash.png"
 
-          echo "✅ Icons & splash generated"
+          echo "=== Verify splash files ==="
+          ls -la "$RES/drawable-xxxhdpi/splash.png"
+          identify "$RES/drawable-xxxhdpi/splash.png"
 
       - name: Final sync
         run: npx cap sync android
 
-      - name: Grant execute permission for gradlew
+      - name: Grant gradlew permission
         run: chmod +x android/gradlew
 
       - name: Build Debug APK
@@ -244,14 +263,14 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk output/our-tour.apk
           ls -la output/
 
-      - name: Upload APK Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: our-tour-apk
           path: output/our-tour.apk
           retention-days: 30
 
-      - name: Create/Update Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
