@@ -26,14 +26,12 @@ jobs:
           accept-android-sdk-licenses: true
 
       - name: Accept Android Licenses
-        run: |
-          yes | sdkmanager --licenses || true
+        run: yes | sdkmanager --licenses || true
 
       - name: Setup www folder
         run: |
           mkdir -p www
           cp index.html www/ || true
-          cp icon.png www/ || echo "no icon"
 
       - name: Install Capacitor
         run: |
@@ -41,17 +39,51 @@ jobs:
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
 
       - name: Install OneSignal plugin
-        run: |
-          npm install onesignal-cordova-plugin@5 --legacy-peer-deps
+        run: npm install onesignal-cordova-plugin@5 --legacy-peer-deps
 
       - name: Init Capacitor
-        run: |
-          npx cap init "OUR EFOOTBALL TOUR" "com.ourefootballtour.app" --web-dir www
+        run: npx cap init "OUR TOUR" "com.ourefootballtour.app" --web-dir www
 
       - name: Add Android Platform
         run: |
           npx cap add android
           npx cap sync android
+
+      - name: Generate App Icons
+        run: |
+          RES=android/app/src/main/res
+          if [ ! -f icon.png ]; then
+            echo "icon.png not found, skipping"
+            exit 0
+          fi
+          # Detect source size
+          SRC_SIZE=$(identify -format "%wx%h" icon.png 2>/dev/null || echo "0x0")
+          echo "Source: $SRC_SIZE"
+          
+          # Create all Android icon sizes
+          for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
+            SIZE="${entry%%:*}"
+            FOLDER="${entry##*:}"
+            mkdir -p "$RES/$FOLDER"
+            convert icon.png -resize ${SIZE}x${SIZE} -background none -gravity center -extent ${SIZE}x${SIZE} "$RES/$FOLDER/ic_launcher.png" 2>/dev/null || echo "convert failed for $SIZE"
+            cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_round.png" 2>/dev/null || true
+            cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png" 2>/dev/null || true
+          done
+          
+          # Also create adaptive icon XML for Android 8+
+          for folder in mipmap-anydpi-v26; do
+            mkdir -p "$RES/$folder"
+            cat > "$RES/$folder/ic_launcher.xml" << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@mipmap/ic_launcher_foreground"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+            cp "$RES/$folder/ic_launcher.xml" "$RES/$folder/ic_launcher_round.xml"
+          done
+          
+          echo "Icons generated successfully!"
 
       - name: Copy google-services
         run: |
