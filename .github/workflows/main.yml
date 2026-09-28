@@ -54,7 +54,6 @@ jobs:
 
       - name: Generate Icons & Splash
         run: |
-          echo "=== Checking icon.png ==="
           if [ ! -f icon.png ]; then
             echo "icon.png missing!"
             exit 1
@@ -62,7 +61,6 @@ jobs:
           
           RES=android/app/src/main/res
           
-          # App launcher icons
           for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
@@ -72,7 +70,6 @@ jobs:
             cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png"
           done
           
-          # Splash screens
           for entry in "480:drawable" "720:drawable-hdpi" "1080:drawable-xhdpi" "1440:drawable-xxhdpi" "1920:drawable-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
@@ -84,68 +81,73 @@ jobs:
               "$RES/$FOLDER/splash.png"
           done
           
-          # Remove default Capacitor splash
-          rm -f $RES/drawable/splash.png
-          # Copy our new one
-          cp $RES/drawable-xxxhdpi/splash.png $RES/drawable/splash.png || true
-          
-          # Remove adaptive icons
           rm -f $RES/mipmap-anydpi-v26/ic_launcher.xml || true
           rm -f $RES/mipmap-anydpi-v26/ic_launcher_round.xml || true
           
-          echo "=== Done ==="
-          ls -la $RES/mipmap-xxxhdpi/
+          echo "=== Icons done ==="
 
-      - name: Add OneSignal Native SDK
+      - name: Add OneSignal Native SDK to Gradle
         run: |
           GRADLE=android/app/build.gradle
-          
-          # Add OneSignal dependency
           if ! grep -q "com.onesignal:OneSignal" "$GRADLE"; then
-            sed -i 's|^dependencies {|dependencies {\n    implementation "com.onesignal:OneSignal:5.1.6"|' "$GRADLE"
+            python3 -c "
+          with open('$GRADLE','r') as f: c=f.read()
+          c=c.replace('dependencies {', 'dependencies {\n    implementation \"com.onesignal:OneSignal:5.1.6\"', 1)
+          with open('$GRADLE','w') as f: f.write(c)
+          "
           fi
-          
-          echo "=== build.gradle deps ==="
-          grep -A 10 "^dependencies {" "$GRADLE" | head -15
-
-      - name: Add OneSignal App ID to strings.xml
-        run: |
-          STRINGS=android/app/src/main/res/values/strings.xml
-          
-          if grep -q "onesignal_app_id" "$STRINGS"; then
-            echo "Already added"
-          else
-            sed -i 's|</resources>|    <string name="onesignal_app_id">58a1aed9-0e82-4063-8da0-bd9f19dc1b94</string>\n</resources>|' "$STRINGS"
-          fi
-          
-          cat "$STRINGS"
-
-      - name: Configure AndroidManifest
-        run: |
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-          
-          # Add permissions
-          if ! grep -q "POST_NOTIFICATIONS" "$MANIFEST"; then
-            sed -i 's|</manifest>|<uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.WAKE_LOCK"/><uses-permission android:name="android.permission.VIBRATE"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/></manifest>|' "$MANIFEST"
-          fi
-          
-          # Add OneSignal meta-data
-          if ! grep -q "onesignal_app_id" "$MANIFEST"; then
-            sed -i 's|<application|<application\n        <meta-data android:name="onesignal_app_id" android:value="58a1aed9-0e82-4063-8da0-bd9f19dc1b94" />|' "$MANIFEST"
-          fi
-          
-          cat "$MANIFEST"
+          grep -A 5 "^dependencies {" "$GRADLE" | head -8
 
       - name: Copy google-services
         run: |
           if [ -f google-services.json ]; then
             cp google-services.json android/app/
-            echo "google-services.json copied"
-          else
-            echo "WARNING: google-services.json not found"
           fi
 
-      - name: Update capacitor config for splash
+      - name: Fix AndroidManifest.xml (Safe way with Python)
+        run: |
+          python3 << 'PYEOF'
+          import os
+          
+          path = "android/app/src/main/AndroidManifest.xml"
+          
+          if not os.path.exists(path):
+              print("Manifest not found!")
+              exit(1)
+          
+          with open(path, "r") as f:
+              content = f.read()
+          
+          # Add permissions before </manifest>
+          permissions = '''    <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+          </manifest>'''
+          
+          content = content.replace("</manifest>", permissions, 1)
+          
+          # Add OneSignal meta-data inside <application>
+          # Find the <application tag and insert after its first > (end of opening tag)
+          import re
+          pattern = r'(<application[^>]*>)'
+          match = re.search(pattern, content)
+          if match:
+              insert_after = match.group(1)
+              meta = insert_after + '''
+                      <meta-data android:name="onesignal_app_id" android:value="58a1aed9-0e82-4063-8da0-bd9f19dc1b94" />'''
+              content = content.replace(insert_after, meta, 1)
+          
+          with open(path, "w") as f:
+              f.write(content)
+          
+          print("=== Updated Manifest ===")
+          print(content)
+          PYEOF
+
+      - name: Update capacitor config
         run: |
           cat > capacitor.config.json << 'EOF'
           {
