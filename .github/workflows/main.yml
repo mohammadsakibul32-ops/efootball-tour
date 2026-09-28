@@ -31,7 +31,7 @@ jobs:
       - name: Install ImageMagick
         run: sudo apt-get update && sudo apt-get install -y imagemagick
 
-      - name: Setup www
+      - name: Setup www folder
         run: |
           mkdir -p www
           cp index.html www/
@@ -40,12 +40,10 @@ jobs:
         run: |
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
-          npm install @capacitor/splash-screen@6 @capacitor/status-bar@6 @capacitor/app@6
-
-      - name: Install OneSignal + Adapter
-        run: |
-          npm install onesignal-cordova-plugin@5 --legacy-peer-deps
-          npm install cordova-plugin-androidx-adapter@1 --legacy-peer-deps
+          npm install @capacitor/push-notifications@6
+          npm install @capacitor/splash-screen@6
+          npm install @capacitor/status-bar@6
+          npm install @capacitor/app@6
 
       - name: Create Capacitor Config
         run: |
@@ -56,17 +54,16 @@ jobs:
             "webDir": "www",
             "bundledWebRuntime": false,
             "plugins": {
+              "PushNotifications": {
+                "presentationOptions": ["badge", "sound", "alert"]
+              },
               "SplashScreen": {
                 "launchShowDuration": 2500,
                 "launchAutoHide": true,
-                "launchFadeOutDuration": 400,
                 "backgroundColor": "#05070e",
                 "androidSplashResourceName": "splash",
                 "androidScaleType": "CENTER_CROP",
-                "showSpinner": false,
-                "splashFullScreen": true,
-                "splashImmersive": false,
-                "useDialog": false
+                "showSpinner": false
               }
             }
           }
@@ -75,21 +72,20 @@ jobs:
       - name: Init Capacitor
         run: npx cap init "OUR TOUR" "com.ourefootballtour.app" --web-dir www || true
 
-      - name: Add Android
+      - name: Add Android Platform
         run: npx cap add android
 
-      - name: Sync Cordova plugins
+      - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Generate Icons & Splash
         run: |
           if [ ! -f icon.png ]; then
-            echo "ERROR: icon.png missing"
+            echo "ERROR: icon.png missing!"
             exit 1
           fi
           RES=android/app/src/main/res
           
-          # App launcher icons
           for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
@@ -99,8 +95,6 @@ jobs:
             cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png"
           done
           
-          # Splash screens — ALL densities + landscape + portrait
-          # Portrait
           for entry in "480:drawable-port-mdpi" "720:drawable-port-hdpi" "1080:drawable-port-xhdpi" "1440:drawable-port-xxhdpi" "1920:drawable-port-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
@@ -109,104 +103,28 @@ jobs:
             convert -size ${SIZE}x${SIZE} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
           done
           
-          # Landscape
           for entry in "800:drawable-land-mdpi" "1280:drawable-land-hdpi" "1920:drawable-land-xhdpi" "2560:drawable-land-xxhdpi" "3200:drawable-land-xxxhdpi"; do
             SIZE="${entry%%:*}"
             FOLDER="${entry##*:}"
             mkdir -p "$RES/$FOLDER"
-            W=$SIZE
             H=$((SIZE*9/16))
             ICON_SIZE=$((H/3))
-            convert -size ${W}x${H} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
+            convert -size ${SIZE}x${H} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
           done
           
-          # Default (fallback)
           mkdir -p "$RES/drawable"
           convert -size 1080x1920 xc:'#05070e' \( icon.png -resize 360x360 \) -gravity center -composite "$RES/drawable/splash.png"
           
-          # Remove adaptive icons for legacy look
           rm -f $RES/mipmap-anydpi-v26/ic_launcher.xml || true
           rm -f $RES/mipmap-anydpi-v26/ic_launcher_round.xml || true
-          
-          # Verify
-          echo "=== Splash files ==="
-          find $RES -name "splash.png" -exec ls -la {} \;
 
-      - name: Create Splash Theme (Android 12+)
-        run: |
-          RES=android/app/src/main/res
-          # values folder for theme
-          mkdir -p $RES/values
-          
-          # Append to styles.xml (create if not exists)
-          STYLES=$RES/values/styles.xml
-          if [ ! -f "$STYLES" ]; then
-            cat > "$STYLES" << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
-                  <item name="android:background">@drawable/splash</item>
-              </style>
-          </resources>
-          EOF
-          fi
-
-      - name: Copy google-services
+      - name: Copy google-services.json
         run: |
           if [ -f google-services.json ]; then
             cp google-services.json android/app/
-          fi
-
-      - name: Detect MainActivity Package
-        id: pkg
-        run: |
-          MAIN=$(find android/app/src/main/java -name "MainActivity.java" | head -1)
-          echo "MainActivity: $MAIN"
-          PKG=$(grep -m1 "^package" "$MAIN" | sed 's/package//;s/;//' | tr -d ' ')
-          echo "package=$PKG" >> $GITHUB_OUTPUT
-          echo "Detected: $PKG"
-
-      - name: Rewrite MainActivity with OneSignal
-        run: |
-          MAIN=$(find android/app/src/main/java -name "MainActivity.java" | head -1)
-          PKG="${{ steps.pkg.outputs.package }}"
-          
-          cat > "$MAIN" << EOF
-          package $PKG;
-
-          import com.getcapacitor.BridgeActivity;
-          import android.os.Bundle;
-          import com.onesignal.OneSignal;
-          import com.onesignal.debug.LogLevel;
-
-          public class MainActivity extends BridgeActivity {
-              @Override
-              public void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  
-                  try {
-                      OneSignal.getDebug().setLogLevel(LogLevel.WARN);
-                      OneSignal.initWithContext(this, "58a1aed9-0e82-4063-8da0-bd9f19dc1b94");
-                      OneSignal.getNotifications().requestPermission(false, com.onesignal.Continue.none());
-                  } catch (Exception e) {
-                      e.printStackTrace();
-                  }
-              }
-          }
-          EOF
-          
-          echo "=== MainActivity ==="
-          cat "$MAIN"
-
-      - name: Add OneSignal Gradle Dep
-        run: |
-          GRADLE=android/app/build.gradle
-          if ! grep -q "com.onesignal:OneSignal" "$GRADLE"; then
-            python3 -c "
-          with open('$GRADLE','r') as f: c=f.read()
-          c=c.replace('dependencies {', 'dependencies {\n    implementation \"com.onesignal:OneSignal:5.1.6\"', 1)
-          with open('$GRADLE','w') as f: f.write(c)
-          "
+            echo "✅ google-services.json copied"
+          else
+            echo "❌ WARNING: google-services.json NOT FOUND"
           fi
 
       - name: Fix AndroidManifest
@@ -214,26 +132,22 @@ jobs:
           python3 << 'PYEOF'
           import re
           path = "android/app/src/main/AndroidManifest.xml"
+          
           with open(path) as f:
               c = f.read()
           
           if "POST_NOTIFICATIONS" not in c:
-              c = c.replace("</manifest>", 
+              c = c.replace("</manifest>",
                   '    <uses-permission android:name="android.permission.INTERNET" />\n'
                   '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
                   '    <uses-permission android:name="android.permission.WAKE_LOCK" />\n'
                   '    <uses-permission android:name="android.permission.VIBRATE" />\n'
                   '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n'
-                  '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
                   '</manifest>', 1)
-          
-          if "onesignal_app_id" not in c:
-              m = re.search(r'(<application[^>]*>)', c)
-              if m:
-                  c = c.replace(m.group(1), m.group(1) + '\n        <meta-data android:name="onesignal_app_id" android:value="58a1aed9-0e82-4063-8da0-bd9f19dc1b94" />', 1)
           
           with open(path, "w") as f:
               f.write(c)
+          
           print("=== Manifest updated ===")
           PYEOF
 
