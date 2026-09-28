@@ -296,6 +296,7 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 </style>
 </head>
 <body>
+
 <div id="loader" class="loader"><div class="spin"></div><div style="color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.2em;text-transform:uppercase">OUR EFOOTBALL TOUR</div></div>
 
 <div id="authScreen" class="auth">
@@ -551,124 +552,139 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 <div id="toast" class="toast"></div>
 
 <script>
-/* ════════════════════════════════════════════════════════════════
-   OUR EFOOTBALL TOUR v2.0 — USER PANEL with OneSignal
-   ════════════════════════════════════════════════════════════════ */
-const firebaseConfig={apiKey:"AIzaSyBgeeZtY-q5AN7JwuXFF5sBoTM9VU7ono8",authDomain:"tour-20d94.firebaseapp.com",databaseURL:"https://tour-20d94-default-rtdb.firebaseio.com",projectId:"tour-20d94",storageBucket:"tour-20d94.firebasestorage.app",messagingSenderId:"1097489681795",appId:"1:1097489681795:web:1ddd4ddf0f5fcd270fbab6"};
+/* ================================================================
+   OUR EFOOTBALL TOUR v2.1 — CLEAN BUILD
+   ================================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBgeeZtY-q5AN7JwuXFF5sBoTM9VU7ono8",
+  authDomain: "tour-20d94.firebaseapp.com",
+  databaseURL: "https://tour-20d94-default-rtdb.firebaseio.com",
+  projectId: "tour-20d94",
+  storageBucket: "tour-20d94.firebasestorage.app",
+  messagingSenderId: "1097489681795",
+  appId: "1:1097489681795:web:1ddd4ddf0f5fcd270fbab6"
+};
 firebase.initializeApp(firebaseConfig);
-const auth=firebase.auth();
-const db=firebase.firestore();
-const FV=firebase.firestore.FieldValue;
+const auth = firebase.auth();
+const db = firebase.firestore();
+const FV = firebase.firestore.FieldValue;
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
 
-const DEFAULT_LOGO="https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png";
+const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png";
 
-(async function preloadLogo(){
-  const el=document.getElementById("authLogo");
-  try{
-    const s=await db.collection("settings").doc("platform").get();
-    const d=s.exists?s.data():{};
-    const url=d.logoUrl||DEFAULT_LOGO;
-    if(el)el.innerHTML='<img src="'+url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.parentElement.innerHTML=\'⚡\'">';
-  }catch(e){
-    if(el)el.innerHTML='<img src="'+DEFAULT_LOGO+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.parentElement.innerHTML=\'⚡\'">';
-  }
+/* ═══ Preload logo ═══ */
+(function preloadLogo(){
+  const el = document.getElementById("authLogo");
+  if(!el) return;
+  db.collection("settings").doc("platform").get().then(s => {
+    const d = s.exists ? s.data() : {};
+    const url = d.logoUrl || DEFAULT_LOGO;
+    el.innerHTML = '<img src="'+url+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.parentElement.innerHTML=\'⚡\'">';
+  }).catch(()=>{
+    el.innerHTML = '<img src="'+DEFAULT_LOGO+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.parentElement.innerHTML=\'⚡\'">';
+  });
 })();
 
 /* ════════════════════════════════════════════════════════════════
-   ONESIGNAL — Cordova v5 + Capacitor + fallback
+   ONESIGNAL
    ════════════════════════════════════════════════════════════════ */
-const ONESIGNAL_APP_ID="58a1aed9-0e82-4063-8da0-bd9f19dc1b94";  
-let __osReady=false;
-leco_osExternalId=null;
+const ONESIGNAL_APP_ID = "58a1aed9-0e82-4063-8da0-bd9f19dc1b94";
+let __osReady = false;
+let __osExternalId = null;
 
 function initOneSignal(uid){
   try{
-    /* Cordova plugin v5 */
     if(window.plugins && window.plugins.OneSignal){
-      const OS=window.plugins.OneSignal;
-      if(typeof OS.initialize==="function"){OS.initialize(ONESIGNAL_APP_ID);__osReady=true}
-      else if(typeof OS.setAppId==="function"){OS.setAppId(ONESIGNAL_APP_ID);__osReady=true}
-      if(__osReady && uid){
-        if(typeof OS.login==="function")OS.login(uid);
-        else if(typeof OS.setExternalUserId==="function")OS.setExternalUserId(uid);
-        __osExternalId=uid;
+      const OS = window.plugins.OneSignal;
+      // Native SDK initialized from MainActivity — just login
+      if(uid){
+        try{
+          if(typeof OS.login === "function") OS.login(uid);
+          else if(typeof OS.setExternalUserId === "function") OS.setExternalUserId(uid);
+          __osExternalId = uid;
+          console.log("✅ OneSignal login:", uid);
+        }catch(e){ console.warn("OS login:", e); }
       }
-      if(__osReady){
-        if(OS.Notifications && typeof OS.Notifications.requestPermission==="function"){
-          OS.Notifications.requestPermission(true).then(()=>console.log("✅ OS permission granted")).catch(e=>console.warn("OS permission:",e));
-        } else if(typeof OS.promptForPushNotificationsWithUserResponse==="function"){
-          OS.promptForPushNotificationsWithUserResponse(()=>console.log("✅ OS permission requested"));
+      // Request permission
+      try{
+        if(OS.Notifications && typeof OS.Notifications.requestPermission === "function"){
+          OS.Notifications.requestPermission(true).catch(err => console.warn("Permission:", err));
+        } else if(typeof OS.promptForPushNotificationsWithUserResponse === "function"){
+          OS.promptForPushNotificationsWithUserResponse(() => {});
         }
-      }
-      if(OS.Notifications && typeof OS.Notifications.addEventListener==="function"){
-        OS.Notifications.addEventListener("click",function(e){console.log("OS notification clicked:",e)});
-      } else if(typeof OS.setNotificationOpenedHandler==="function"){
-        OS.setNotificationOpenedHandler(function(d){console.log("OS opened:",d)});
-      }
-      console.log("✅ OneSignal Cordova ready:",uid);
+      }catch(e){}
+      __osReady = true;
       return "cordova";
     }
-    /* Capacitor */
     if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.OneSignal){
-      const COS=window.Capacitor.Plugins.OneSignal;
-      if(COS.initialize)COS.initialize(ONESIGNAL_APP_ID);
-      if(COS.login)COS.login({externalId:uid});
-      __osReady=true;__osExternalId=uid;
+      const COS = window.Capacitor.Plugins.OneSignal;
+      if(uid) COS.login({ externalId: uid });
+      __osReady = true;
+      __osExternalId = uid;
       return "capacitor";
     }
-    /* AppMint */
     if(window.AppMint && window.AppMint.OneSignal){
-      window.AppMint.OneSignal.login(uid).catch(()=>{});
+      if(uid) window.AppMint.OneSignal.login(uid).catch(()=>{});
       window.AppMint.OneSignal.requestPermission().catch(()=>{});
       return "appmint";
     }
-    console.warn("⚠️ OneSignal plugin not found");
     return "none";
-  }catch(e){console.error("OS error:",e);return "error"}
+  }catch(e){ console.error("OS error:", e); return "error"; }
 }
 
 function logoutOneSignal(){
   try{
     if(window.plugins && window.plugins.OneSignal){
-      const OS=window.plugins.OneSignal;
-      if(typeof OS.logout==="function")OS.logout();
-      else if(typeof OS.removeExternalUserId==="function")OS.removeExternalUserId();
-    } else if(window.Capacitor?.Plugins?.OneSignal){
-      window.Capacitor.Plugins.OneSignal.logout?.();
-    } else if(window.AppMint?.OneSignal){
+      const OS = window.plugins.OneSignal;
+      if(typeof OS.logout === "function") OS.logout();
+      else if(typeof OS.removeExternalUserId === "function") OS.removeExternalUserId();
+    } else if(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.OneSignal){
+      window.Capacitor.Plugins.OneSignal.logout && window.Capacitor.Plugins.OneSignal.logout();
+    } else if(window.AppMint && window.AppMint.OneSignal){
       window.AppMint.OneSignal.logout();
     }
-    __osExternalId=null;
-  }catch(e){console.warn("OS logout:",e)}
+    __osExternalId = null;
+  }catch(e){}
 }
 
-document.addEventListener("deviceready",function(){
-  console.log("✅ Cordova deviceready fired");
-  try{
-    if(window.plugins && window.plugins.OneSignal){
-      const OS=window.plugins.OneSignal;
-      if(typeof OS.initialize==="function")OS.initialize(ONESIGNAL_APP_ID);
-      else if(typeof OS.setAppId==="function")OS.setAppId(ONESIGNAL_APP_ID);
-      __osReady=true;
-      console.log("✅ OneSignal initialized on deviceready");
-      /* Re-login if we have UID stored */
-      if(__osExternalId){
-        try{
-          if(typeof OS.login==="function")OS.login(__osExternalId);
-          else if(typeof OS.setExternalUserId==="function")OS.setExternalUserId(__osExternalId);
-        }catch(e){}
-      }
+document.addEventListener("deviceready", function(){
+  console.log("✅ Cordova deviceready");
+  if(window.plugins && window.plugins.OneSignal){
+    __osReady = true;
+    // Re-login if we already have UID
+    if(__osExternalId){
+      try{
+        const OS = window.plugins.OneSignal;
+        if(typeof OS.login === "function") OS.login(__osExternalId);
+        else if(typeof OS.setExternalUserId === "function") OS.setExternalUserId(__osExternalId);
+      }catch(e){}
     }
-  }catch(e){console.warn("deviceready OS:",e)}
-},false);
+  }
+}, false);
 
 /* Auto-login */
-(function(){try{const e=localStorage.getItem("eft_email"),p=localStorage.getItem("eft_pass");if(e&&p)auth.signInWithEmailAndPassword(e,p).catch(()=>{localStorage.removeItem("eft_email");localStorage.removeItem("eft_pass")})}catch(e){}})();
+(function(){
+  try{
+    const e = localStorage.getItem("eft_email"), p = localStorage.getItem("eft_pass");
+    if(e && p) auth.signInWithEmailAndPassword(e,p).catch(()=>{
+      localStorage.removeItem("eft_email");
+      localStorage.removeItem("eft_pass");
+    });
+  }catch(e){}
+})();
 
-const S={user:null,data:null,matchId:null,chatMatchId:null,chatUnsub:null,chatPoll:null,notifUnsub:null,bannerUnsub:null,timers:{},chatSending:false,autoApproveRunning:false,avatarSel:"",payMethod:"bKash"};
-const $=id=>document.getElementById(id);
+/* State */
+const S = {
+  user:null, data:null,
+  matchId:null, chatMatchId:null,
+  chatUnsub:null, chatPoll:null,
+  notifUnsub:null, bannerUnsub:null,
+  timers:{}, chatSending:false, autoApproveRunning:false,
+  avatarSel:"", payMethod:"bKash"
+};
+const $ = id => document.getElementById(id);
 
+/* Helpers */
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;")}
 function money(v){return Number(v||0).toLocaleString("en-BD")}
 function fmt(d){try{if(!d)return"—";const x=d.toDate?d.toDate():new Date(d);return isNaN(x.getTime())?"—":x.toLocaleString("en-BD",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}catch(e){return "—"}}
@@ -680,7 +696,7 @@ function closeModal(id){$(id).classList.remove("show")}
 function showErr(m){$("authErr").textContent=m;$("authErr").classList.remove("hidden");$("authOk").classList.add("hidden")}
 function showOk(m){$("authOk").textContent=m;$("authOk").classList.remove("hidden");$("authErr").classList.add("hidden")}
 function clearAuth(){$("authErr").classList.add("hidden");$("authOk").classList.add("hidden")}
-function fbErr(e){const c=e?.code||"";const m={"auth/invalid-email":"Email is not valid","auth/user-not-found":"Account not found","auth/wrong-password":"Wrong password","auth/invalid-credential":"Email or password is incorrect","auth/email-already-in-use":"This email is already registered","auth/weak-password":"Password should be at least 6 characters","auth/network-request-failed":"Network error","auth/too-many-requests":"Too many attempts","permission-denied":"Permission denied"};return m[c]||e?.message||"Something went wrong"}
+function fbErr(e){const c=e&&e.code?e.code:"";const m={"auth/invalid-email":"Email is not valid","auth/user-not-found":"Account not found","auth/wrong-password":"Wrong password","auth/invalid-credential":"Email or password is incorrect","auth/email-already-in-use":"This email is already registered","auth/weak-password":"Password should be at least 6 characters","auth/network-request-failed":"Network error","auth/too-many-requests":"Too many attempts","permission-denied":"Permission denied"};return m[c]||(e&&e.message)||"Something went wrong"}
 
 function openDrawer(){$("drawer").classList.add("show");$("drawerOv").classList.add("show");renderDrawer()}
 function closeDrawer(){$("drawer").classList.remove("show");$("drawerOv").classList.remove("show")}
@@ -691,7 +707,7 @@ function renderDrawer(){
   const n=S.data.nickname||S.data.displayName||S.data.name||"Player";
   const av=S.data.avatarUrl||S.data.photoURL||"";
   $("dName").textContent=n;
-  $("dEmail").textContent=S.user?.email||"";
+  $("dEmail").textContent=(S.user&&S.user.email)||"";
   $("dAvatar").innerHTML=av?'<img src="'+esc(av)+'">':esc(n.charAt(0).toUpperCase());
 }
 
@@ -743,7 +759,14 @@ $("registerBtn").onclick=async()=>{
   try{showLoad();
     const r=await auth.createUserWithEmailAndPassword(e,p);
     await r.user.updateProfile({displayName:n});
-    await db.collection("users").doc(r.user.uid).set({uid:r.user.uid,displayName:n,name:n,email:r.user.email,photoURL:"",avatarUrl:"",role:"player",walletBalance:0,wins:0,losses:0,tournaments:0,totalScore:0,referralCode:"EFT"+r.user.uid.substring(0,6).toUpperCase(),referralCount:0,referralEarnings:0,createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()});
+    await db.collection("users").doc(r.user.uid).set({
+      uid:r.user.uid,displayName:n,name:n,email:r.user.email,
+      photoURL:"",avatarUrl:"",role:"player",
+      walletBalance:0,wins:0,losses:0,tournaments:0,totalScore:0,
+      referralCode:"EFT"+r.user.uid.substring(0,6).toUpperCase(),
+      referralCount:0,referralEarnings:0,
+      createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()
+    });
     try{localStorage.setItem("eft_email",e);localStorage.setItem("eft_pass",p)}catch(x){}
     showOk("Account created ✓");
   }catch(err){showErr(fbErr(err))}
@@ -767,10 +790,18 @@ auth.onAuthStateChanged(async u=>{
   }
   try{
     S.user=u;
+    window.__currentUid = u.uid;
     const ref=db.collection("users").doc(u.uid);
     const snap=await ref.get({source:"server"});
     if(!snap.exists){
-      await ref.set({uid:u.uid,displayName:u.displayName||"",name:u.displayName||"",email:u.email||"",photoURL:"",avatarUrl:"",role:"player",walletBalance:0,wins:0,losses:0,tournaments:0,totalScore:0,referralCode:"EFT"+u.uid.substring(0,6).toUpperCase(),referralCount:0,referralEarnings:0,createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()});
+      await ref.set({
+        uid:u.uid,displayName:u.displayName||"",name:u.displayName||"",
+        email:u.email||"",photoURL:"",avatarUrl:"",role:"player",
+        walletBalance:0,wins:0,losses:0,tournaments:0,totalScore:0,
+        referralCode:"EFT"+u.uid.substring(0,6).toUpperCase(),
+        referralCount:0,referralEarnings:0,
+        createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()
+      });
       S.data={uid:u.uid,displayName:u.displayName||"",email:u.email||"",walletBalance:0,wins:0,losses:0,tournaments:0,totalScore:0};
     }else{
       S.data={uid:u.uid,...snap.data()};
@@ -778,10 +809,10 @@ auth.onAuthStateChanged(async u=>{
     $("authScreen").classList.add("hidden");
     $("app").classList.remove("hidden");
 
-    /* OneSignal — 3 attempts for safety */
-    try{initOneSignal(u.uid)}catch(e){console.warn("OS init 1:",e)}
-    setTimeout(()=>{try{initOneSignal(u.uid)}catch(e){}},2500);
-    setTimeout(()=>{try{initOneSignal(u.uid)}catch(e){}},7000);
+    // OneSignal init — 3 attempts
+    try{initOneSignal(u.uid)}catch(e){}
+    setTimeout(()=>{try{initOneSignal(u.uid)}catch(e){}},2000);
+    setTimeout(()=>{try{initOneSignal(u.uid)}catch(e){}},6000);
 
     renderDrawer();
     loadBranding();
@@ -1009,7 +1040,7 @@ async function loadMyTournaments(){
       const ju=Array.isArray(m.joinedUids)?m.joinedUids:[];
       const jl=Array.isArray(m.joinedPlayers)?m.joinedPlayers:[];
       const uids=ju.length?ju:jl.map(p=>p.uid);
-      if(uids.includes(uid)){m.__id=doc.id;mine.push(m)}
+      if(uids.indexOf(uid)!==-1){m.__id=doc.id;mine.push(m)}
     });
     if(!mine.length){box.innerHTML='<div class="empty"><span class="ic">📋</span>You haven\'t joined any tournaments yet.</div>';return}
     let h="";
@@ -1048,7 +1079,7 @@ async function viewTournament(id){
     const jl=Array.isArray(m.joinedPlayers)?m.joinedPlayers:[];
     const jc=ju.length||jl.length;
     const maxP=m.maxPlayers||(isBig?10:2);
-    const iJoined=ju.includes(S.user.uid);
+    const iJoined=ju.indexOf(S.user.uid)!==-1;
     const isFull=jc>=maxP;
     hideLoad();
     let h='<div class="modal-box">';
@@ -1105,11 +1136,11 @@ async function joinMatch(id){
     if(!doc.exists){toast("Match not found","err");hideLoad();return}
     const m=doc.data();
     const ju=Array.isArray(m.joinedUids)?m.joinedUids.slice():[];
-    if(ju.includes(S.user.uid)){toast("Already joined","err");hideLoad();return}
+    if(ju.indexOf(S.user.uid)!==-1){toast("Already joined","err");hideLoad();return}
     const maxP=m.maxPlayers||2;
     if(ju.length>=maxP){toast("Match is full","err");hideLoad();return}
     const st=(m.status||"").toLowerCase();
-    if(["cancelled","completed"].includes(st)){toast("Match not available","err");hideLoad();return}
+    if(["cancelled","completed"].indexOf(st)!==-1){toast("Match not available","err");hideLoad();return}
     const fee=Number(m.entryFee||0);
     if(fee>0){
       const u=await db.collection("users").doc(S.user.uid).get();
@@ -1128,7 +1159,7 @@ async function joinMatch(id){
       const md=ms.data();
       const ud=us.exists?us.data():{};
       const cj=Array.isArray(md.joinedUids)?md.joinedUids.slice():[];
-      if(cj.includes(S.user.uid))throw new Error("Already joined");
+      if(cj.indexOf(S.user.uid)!==-1)throw new Error("Already joined");
       const cp=Array.isArray(md.joinedPlayers)?md.joinedPlayers.slice():[];
       cj.push(S.user.uid);cp.push(pi);newCount=cj.length;
       const ob=Number(ud.walletBalance||0);
@@ -1158,7 +1189,18 @@ async function autoCreateNext(old){
     const s=await db.collection("settings").doc("platform").get();
     const sd=s.exists?s.data():{};
     if(sd.autoCreateNext===false)return;
-    await db.collection("matches").add({title:old.title||"Match",matchType:old.matchType||"solo",entryFee:Number(old.entryFee||0),prize1:Number(old.prize1||old.prize||0),prize2:Number(old.prize2||0),prize3:Number(old.prize3||0),prize:Number(old.prize||old.prize1||0),maxPlayers:old.maxPlayers||((old.matchType||"solo").toLowerCase()==="big"?10:2),rules:old.rules||"",matchUrl:old.matchUrl||"",bannerUrl:old.bannerUrl||"",whatsappLink:old.whatsappLink||"",timerMinutes:old.timerMinutes||0,status:"Open",joinedUids:[],joinedPlayers:[],playerIds:[],playerUidArray:[],autoCreated:true,parentMatchId:old.__id||"",createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()});
+    await db.collection("matches").add({
+      title:old.title||"Match",matchType:old.matchType||"solo",
+      entryFee:Number(old.entryFee||0),
+      prize1:Number(old.prize1||old.prize||0),prize2:Number(old.prize2||0),prize3:Number(old.prize3||0),
+      prize:Number(old.prize||old.prize1||0),
+      maxPlayers:old.maxPlayers||((old.matchType||"solo").toLowerCase()==="big"?10:2),
+      rules:old.rules||"",matchUrl:old.matchUrl||"",bannerUrl:old.bannerUrl||"",whatsappLink:old.whatsappLink||"",
+      timerMinutes:old.timerMinutes||0,
+      status:"Open",joinedUids:[],joinedPlayers:[],playerIds:[],playerUidArray:[],
+      autoCreated:true,parentMatchId:old.__id||"",
+      createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()
+    });
   }catch(e){console.error("Auto-create fail:",e.message)}
 }
 
@@ -1179,7 +1221,7 @@ async function loadMatches(){
       const ju=Array.isArray(m.joinedUids)?m.joinedUids:[];
       const jl=Array.isArray(m.joinedPlayers)?m.joinedPlayers:[];
       const uids=ju.length?ju:jl.map(p=>p.uid);
-      if(uids.includes(uid)){m.__id=doc.id;mine.push(m)}
+      if(uids.indexOf(uid)!==-1){m.__id=doc.id;mine.push(m)}
     });
     if(!mine.length){box.innerHTML='<div class="empty"><span class="ic">🎮</span>No matches yet.<br><br>Join a tournament to start playing.</div>';return}
     let h="";
@@ -1224,7 +1266,7 @@ async function openRoom(id){
     if(!doc.exists){toast("Match not found","err");hideLoad();return}
     const m=doc.data();m.__id=id;
     const ju=Array.isArray(m.joinedUids)?m.joinedUids:[];
-    if(!ju.includes(S.user.uid)){toast("You haven't joined","err");hideLoad();return}
+    if(ju.indexOf(S.user.uid)===-1){toast("You haven't joined","err");hideLoad();return}
     S.matchId=id;
     const isBig=(m.matchType||"solo").toLowerCase()==="big";
     const jl=Array.isArray(m.joinedPlayers)?m.joinedPlayers:[];
@@ -1410,7 +1452,7 @@ window.checkAutoApprove=checkAutoApprove;
 
 function parseSMS(text){
   if(!text)return null;
-  if(text.includes("[sms_message]")||text.includes("%text%"))return null;
+  if(text.indexOf("[sms_message]")!==-1||text.indexOf("%text%")!==-1)return null;
   let m=text.match(/received\s+Tk\.?\s*([\d,]+\.?\d*)\s+from\s+(\d{11}).*?TrxID\s+([A-Z0-9]+)/i);
   if(m)return{method:"bKash",amount:parseFloat(String(m[1]).replace(/,/g,"")),sender:m[2],trxId:m[3]};
   if(/Cash\s+In\s+Received/i.test(text)){
@@ -1443,13 +1485,13 @@ async function loadWallet(){
       const plus=amt>=0;
       const t=(x.type||"").toLowerCase();
       let ic="💰",cls="credit",title=x.type||"Transaction";
-      if(t.includes("prize")||t.includes("match_win")){ic="🏆";cls="prize";title="Prize"}
-      else if(t.includes("deposit")){ic="➕";cls="credit";title="Deposit"}
-      else if(t.includes("withdraw")){ic="💸";cls="withdraw";title="Withdraw"}
-      else if(t.includes("match_entry")){ic="🎮";cls="entry";title="Match Entry"}
-      else if(t.includes("refund")){ic="↺";cls="refund";title="Refund"}
-      else if(t.includes("referral")){ic="🎁";cls="prize";title="Referral Bonus"}
-      else if(t.includes("admin_adjust")){ic="⚙️";cls="credit";title="Admin Adjustment"}
+      if(t.indexOf("prize")!==-1||t.indexOf("match_win")!==-1){ic="🏆";cls="prize";title="Prize"}
+      else if(t.indexOf("deposit")!==-1){ic="➕";cls="credit";title="Deposit"}
+      else if(t.indexOf("withdraw")!==-1){ic="💸";cls="withdraw";title="Withdraw"}
+      else if(t.indexOf("match_entry")!==-1){ic="🎮";cls="entry";title="Match Entry"}
+      else if(t.indexOf("refund")!==-1){ic="↺";cls="refund";title="Refund"}
+      else if(t.indexOf("referral")!==-1){ic="🎁";cls="prize";title="Referral Bonus"}
+      else if(t.indexOf("admin_adjust")!==-1){ic="⚙️";cls="credit";title="Admin Adjustment"}
       else if(plus){ic="➕";cls="credit"}
       else{ic="➖";cls="debit"}
       h+='<div class="tx-item"><div class="tx-ic '+cls+'">'+ic+'</div>';
@@ -1512,7 +1554,7 @@ async function submitDeposit(){
     showLoad();
     const dup=await db.collection("payments").where("trxId","==",trxId).limit(1).get({source:"server"});
     if(!dup.empty)throw new Error("This TrxID was already submitted");
-    await db.collection("payments").add({userId:S.user.uid,userName:S.data?.displayName||S.user.displayName||"",userEmail:S.user.email||"",method:S.payMethod,amount,trxId,senderNumber:sender,status:"Pending",createdAt:FV.serverTimestamp()});
+    await db.collection("payments").add({userId:S.user.uid,userName:S.data&&S.data.displayName||S.user.displayName||"",userEmail:S.user.email||"",method:S.payMethod,amount,trxId,senderNumber:sender,status:"Pending",createdAt:FV.serverTimestamp()});
     try{await db.collection("notifications").add({userId:S.user.uid,title:"💰 Deposit Request Sent",message:"৳"+amount+" "+S.payMethod+" deposit submitted for verification.",type:"deposit",read:false,createdAt:FV.serverTimestamp()})}catch(e){}
     closeModal("addMoneyModal");
     toast("✅ Deposit submitted for verification","ok");
@@ -1545,7 +1587,7 @@ async function submitWithdraw(){
       const bal=Number(us.data().walletBalance||0);
       if(bal<amount)throw new Error("Insufficient balance");
       tr.update(userRef,{walletBalance:FV.increment(-amount),updatedAt:FV.serverTimestamp()});
-      tr.set(wRef,{userId:S.user.uid,userName:S.data?.displayName||S.user.displayName||"",userEmail:S.user.email||"",amount,method,receiverNumber:number,status:"Pending",createdAt:FV.serverTimestamp()});
+      tr.set(wRef,{userId:S.user.uid,userName:S.data&&S.data.displayName||S.user.displayName||"",userEmail:S.user.email||"",amount,method,receiverNumber:number,status:"Pending",createdAt:FV.serverTimestamp()});
       tr.set(db.collection("transactions").doc(),{userId:S.user.uid,type:"withdrawal",amount:-amount,withdrawalId:wRef.id,status:"Pending",createdAt:FV.serverTimestamp()});
     });
     closeModal("withdrawModal");
@@ -1698,7 +1740,7 @@ async function submitReport(){
   if(!S.matchId){toast("Open a match room first","err");return}
   try{
     showLoad();
-    await db.collection("matchReports").add({matchId:S.matchId,reporterId:S.user.uid,reporterName:S.data?.nickname||S.data?.displayName||"Player",issueType:type,reason:desc,status:"Pending",createdAt:FV.serverTimestamp()});
+    await db.collection("matchReports").add({matchId:S.matchId,reporterId:S.user.uid,reporterName:S.data&&S.data.nickname||S.data&&S.data.displayName||"Player",issueType:type,reason:desc,status:"Pending",createdAt:FV.serverTimestamp()});
     closeModal("reportModal");
     toast("✅ Report submitted","ok");
   }catch(e){toast("Failed","err")}
@@ -1840,7 +1882,7 @@ setInterval(async()=>{
     snap.forEach(async doc=>{
       const m=doc.data();
       const st=(m.status||"").toLowerCase();
-      if(["completed","deleted","cancelled"].includes(st))return;
+      if(["completed","deleted","cancelled"].indexOf(st)!==-1)return;
       const exp=m.expiresAt||m.timerEnd;
       if(!exp)return;
       const end=exp.toMillis?exp.toMillis():new Date(exp).getTime();
@@ -1854,7 +1896,7 @@ document.querySelectorAll(".modal").forEach(m=>{
   m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("show")});
 });
 
-console.log("✅ OUR EFOOTBALL TOUR v2.0 loaded with OneSignal");
+console.log("✅ OUR EFOOTBALL TOUR v2.1 — Clean build loaded");
 </script>
 </body>
 </html>
