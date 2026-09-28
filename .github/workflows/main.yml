@@ -28,10 +28,15 @@ jobs:
       - name: Accept Android Licenses
         run: yes | sdkmanager --licenses || true
 
+      - name: Install ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
       - name: Setup www folder
         run: |
           mkdir -p www
           cp index.html www/ || true
+          cp icon.png www/ || echo "no icon"
+          cp icon.png www/icon.png || true
 
       - name: Install Capacitor
         run: |
@@ -51,39 +56,42 @@ jobs:
 
       - name: Generate App Icons
         run: |
+          ls -la
+          echo "=== Icon file check ==="
+          ls -la icon.png || echo "icon.png MISSING"
+          
           RES=android/app/src/main/res
-          if [ ! -f icon.png ]; then
-            echo "icon.png not found, skipping"
-            exit 0
-          fi
-          # Detect source size
-          SRC_SIZE=$(identify -format "%wx%h" icon.png 2>/dev/null || echo "0x0")
-          echo "Source: $SRC_SIZE"
+          echo "=== Generating icons to $RES ==="
           
-          # Create all Android icon sizes
-          for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
-            SIZE="${entry%%:*}"
-            FOLDER="${entry##*:}"
-            mkdir -p "$RES/$FOLDER"
-            convert icon.png -resize ${SIZE}x${SIZE} -background none -gravity center -extent ${SIZE}x${SIZE} "$RES/$FOLDER/ic_launcher.png" 2>/dev/null || echo "convert failed for $SIZE"
-            cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_round.png" 2>/dev/null || true
-            cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png" 2>/dev/null || true
-          done
-          
-          # Also create adaptive icon XML for Android 8+
-          for folder in mipmap-anydpi-v26; do
-            mkdir -p "$RES/$folder"
-            cat > "$RES/$folder/ic_launcher.xml" << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@mipmap/ic_launcher_foreground"/>
-              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-          </adaptive-icon>
-          EOF
-            cp "$RES/$folder/ic_launcher.xml" "$RES/$folder/ic_launcher_round.xml"
-          done
-          
-          echo "Icons generated successfully!"
+          # Generate launcher icons (standard + round)
+          convert icon.png -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
+          convert icon.png -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher_round.png"
+          convert icon.png -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher_foreground.png"
+
+          convert icon.png -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
+          convert icon.png -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher_round.png"
+          convert icon.png -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher_foreground.png"
+
+          convert icon.png -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
+          convert icon.png -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher_round.png"
+          convert icon.png -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher_foreground.png"
+
+          convert icon.png -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
+          convert icon.png -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher_round.png"
+          convert icon.png -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher_foreground.png"
+
+          convert icon.png -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
+          convert icon.png -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png"
+          convert icon.png -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_foreground.png"
+
+          echo "=== Icons generated! ==="
+          ls -la $RES/mipmap-xxxhdpi/
+
+      - name: Remove Adaptive Icon XML (force legacy icon)
+        run: |
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml || true
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml || true
+          echo "Removed adaptive icons"
 
       - name: Copy google-services
         run: |
