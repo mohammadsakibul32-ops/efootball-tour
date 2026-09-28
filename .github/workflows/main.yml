@@ -1,42 +1,45 @@
-name: Build APK
+name: Build Android APK
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 17
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
-          accept-android-sdk-licenses: true
-
-      - name: Accept Licenses
-        run: yes | sdkmanager --licenses || true
 
       - name: Install ImageMagick
         run: sudo apt-get update && sudo apt-get install -y imagemagick
 
-      - name: Setup www folder
+      - name: Prepare www folder
         run: |
           mkdir -p www
-          cp index.html www/
+          cp index.html www/index.html
+          ls -la www/
 
-      - name: Install Capacitor
+      - name: Install Capacitor & plugins
         run: |
           npm init -y
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
@@ -45,7 +48,7 @@ jobs:
           npm install @capacitor/status-bar@6
           npm install @capacitor/app@6
 
-      - name: Create Capacitor Config
+      - name: Create capacitor.config.json
         run: |
           cat > capacitor.config.json << 'EOF'
           {
@@ -53,126 +56,203 @@ jobs:
             "appName": "OUR TOUR",
             "webDir": "www",
             "bundledWebRuntime": false,
+            "server": {
+              "androidScheme": "https"
+            },
             "plugins": {
               "PushNotifications": {
                 "presentationOptions": ["badge", "sound", "alert"]
               },
               "SplashScreen": {
-                "launchShowDuration": 2500,
+                "launchShowDuration": 2000,
                 "launchAutoHide": true,
                 "backgroundColor": "#05070e",
                 "androidSplashResourceName": "splash",
                 "androidScaleType": "CENTER_CROP",
-                "showSpinner": false
+                "showSpinner": false,
+                "splashFullScreen": true,
+                "splashImmersive": true
+              },
+              "StatusBar": {
+                "style": "DARK",
+                "backgroundColor": "#05070e"
               }
             }
           }
           EOF
 
-      - name: Init Capacitor
-        run: npx cap init "OUR TOUR" "com.ourefootballtour.app" --web-dir www || true
-
-      - name: Add Android Platform
-        run: npx cap add android
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Generate Icons & Splash
+      - name: Capacitor init & add android
         run: |
-          if [ ! -f icon.png ]; then
-            echo "ERROR: icon.png missing!"
-            exit 1
-          fi
-          RES=android/app/src/main/res
-          
-          for entry in "48:mipmap-mdpi" "72:mipmap-hdpi" "96:mipmap-xhdpi" "144:mipmap-xxhdpi" "192:mipmap-xxxhdpi"; do
-            SIZE="${entry%%:*}"
-            FOLDER="${entry##*:}"
-            mkdir -p "$RES/$FOLDER"
-            convert icon.png -resize ${SIZE}x${SIZE} -background none -gravity center -extent ${SIZE}x${SIZE} "$RES/$FOLDER/ic_launcher.png"
-            cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_round.png"
-            cp "$RES/$FOLDER/ic_launcher.png" "$RES/$FOLDER/ic_launcher_foreground.png"
-          done
-          
-          for entry in "480:drawable-port-mdpi" "720:drawable-port-hdpi" "1080:drawable-port-xhdpi" "1440:drawable-port-xxhdpi" "1920:drawable-port-xxxhdpi"; do
-            SIZE="${entry%%:*}"
-            FOLDER="${entry##*:}"
-            mkdir -p "$RES/$FOLDER"
-            ICON_SIZE=$((SIZE/3))
-            convert -size ${SIZE}x${SIZE} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
-          done
-          
-          for entry in "800:drawable-land-mdpi" "1280:drawable-land-hdpi" "1920:drawable-land-xhdpi" "2560:drawable-land-xxhdpi" "3200:drawable-land-xxxhdpi"; do
-            SIZE="${entry%%:*}"
-            FOLDER="${entry##*:}"
-            mkdir -p "$RES/$FOLDER"
-            H=$((SIZE*9/16))
-            ICON_SIZE=$((H/3))
-            convert -size ${SIZE}x${H} xc:'#05070e' \( icon.png -resize ${ICON_SIZE}x${ICON_SIZE} \) -gravity center -composite "$RES/$FOLDER/splash.png"
-          done
-          
-          mkdir -p "$RES/drawable"
-          convert -size 1080x1920 xc:'#05070e' \( icon.png -resize 360x360 \) -gravity center -composite "$RES/drawable/splash.png"
-          
-          rm -f $RES/mipmap-anydpi-v26/ic_launcher.xml || true
-          rm -f $RES/mipmap-anydpi-v26/ic_launcher_round.xml || true
+          npx cap init "OUR TOUR" com.ourefootballtour.app --web-dir www
+          npx cap add android
+          npx cap sync android
 
       - name: Copy google-services.json
         run: |
           if [ -f google-services.json ]; then
-            cp google-services.json android/app/
+            cp google-services.json android/app/google-services.json
             echo "✅ google-services.json copied"
           else
-            echo "❌ WARNING: google-services.json NOT FOUND"
+            echo "❌ google-services.json NOT FOUND in repo root!"
+            exit 1
           fi
 
-      - name: Fix AndroidManifest
+      - name: Inject Google Services plugin — android/build.gradle
         run: |
-          python3 << 'PYEOF'
-          import re
-          path = "android/app/src/main/AndroidManifest.xml"
-          
-          with open(path) as f:
-              c = f.read()
-          
-          if "POST_NOTIFICATIONS" not in c:
-              c = c.replace("</manifest>",
-                  '    <uses-permission android:name="android.permission.INTERNET" />\n'
-                  '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
-                  '    <uses-permission android:name="android.permission.WAKE_LOCK" />\n'
-                  '    <uses-permission android:name="android.permission.VIBRATE" />\n'
-                  '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n'
-                  '</manifest>', 1)
-          
-          with open(path, "w") as f:
-              f.write(c)
-          
-          print("=== Manifest updated ===")
-          PYEOF
+          GRADLE_FILE=android/build.gradle
+          if ! grep -q "com.google.gms:google-services" "$GRADLE_FILE"; then
+            sed -i "/dependencies {/a\\        classpath 'com.google.gms:google-services:4.4.2'" "$GRADLE_FILE"
+            echo "✅ Added google-services classpath"
+          else
+            echo "ℹ️ classpath already present"
+          fi
+          echo "--- build.gradle dependencies section ---"
+          grep -A 10 "dependencies {" "$GRADLE_FILE" || true
 
-      - name: Final Sync
+      - name: Inject Google Services plugin — android/app/build.gradle
+        run: |
+          APP_GRADLE=android/app/build.gradle
+          if ! grep -q "com.google.gms.google-services" "$APP_GRADLE"; then
+            echo "" >> "$APP_GRADLE"
+            echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
+            echo "✅ Added google-services apply plugin"
+          else
+            echo "ℹ️ apply plugin already present"
+          fi
+          echo "--- last lines of app/build.gradle ---"
+          tail -5 "$APP_GRADLE"
+
+      - name: Fix AndroidManifest — permissions & notification metadata
+        run: |
+          MF=android/app/src/main/AndroidManifest.xml
+          echo "--- ORIGINAL MANIFEST ---"
+          cat "$MF"
+
+          # Add POST_NOTIFICATIONS permission
+          if ! grep -q "POST_NOTIFICATIONS" "$MF"; then
+            sed -i 's|<application|<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <application|' "$MF"
+            echo "✅ Added permissions"
+          fi
+
+          # Add default notification channel meta-data
+          if ! grep -q "default_notification_channel_id" "$MF"; then
+            sed -i 's|</application>|    <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="default" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap/ic_launcher" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/colorPrimary" />\n    </application>|' "$MF"
+            echo "✅ Added FCM meta-data"
+          fi
+
+          echo "--- FINAL MANIFEST ---"
+          cat "$MF"
+
+      - name: Add colorPrimary to colors.xml
+        run: |
+          COLORS=android/app/src/main/res/values/colors.xml
+          if [ ! -f "$COLORS" ]; then
+            mkdir -p android/app/src/main/res/values
+            cat > "$COLORS" << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="colorPrimary">#05070e</color>
+              <color name="colorPrimaryDark">#05070e</color>
+              <color name="colorAccent">#22d3ee</color>
+          </resources>
+          EOF
+            echo "✅ colors.xml created"
+          else
+            if ! grep -q "colorPrimary" "$COLORS"; then
+              sed -i 's|</resources>|    <color name="colorPrimary">#05070e</color>\n    <color name="colorPrimaryDark">#05070e</color>\n    <color name="colorAccent">#22d3ee</color>\n</resources>|' "$COLORS"
+              echo "✅ colorPrimary added"
+            fi
+          fi
+          cat "$COLORS"
+
+      - name: Generate Icons & Splash
+        run: |
+          set -e
+
+          # ---------- App icons ----------
+          if [ -f icon.png ]; then
+            SRC=icon.png
+          elif [ -f efcon.png ]; then
+            SRC=efcon.png
+          else
+            echo "⚠️ No icon found — creating placeholder"
+            convert -size 512x512 xc:#05070e -fill '#22d3ee' -gravity center -pointsize 200 -annotate 0 "⚽" icon.png || convert -size 512x512 xc:#05070e icon.png
+            SRC=icon.png
+          fi
+
+          RES=android/app/src/main/res
+
+          # Standard densities
+          convert "$SRC" -resize 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
+          convert "$SRC" -resize 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
+          convert "$SRC" -resize 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
+          convert "$SRC" -resize 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
+          convert "$SRC" -resize 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
+
+          # Round icons
+          convert "$SRC" -resize 48x48   -alpha set -background none -gravity center -extent 48x48 "$RES/mipmap-mdpi/ic_launcher_round.png" || true
+          convert "$SRC" -resize 72x72   -alpha set -background none -gravity center -extent 72x72 "$RES/mipmap-hdpi/ic_launcher_round.png" || true
+          convert "$SRC" -resize 96x96   -alpha set -background none -gravity center -extent 96x96 "$RES/mipmap-xhdpi/ic_launcher_round.png" || true
+          convert "$SRC" -resize 144x144 -alpha set -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher_round.png" || true
+          convert "$SRC" -resize 192x192 -alpha set -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png" || true
+
+          # Foreground
+          for d in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
+            DENSITY="${d%%:*}"; SIZE="${d##*:}"
+            mkdir -p "$RES/mipmap-$DENSITY"
+            convert "$SRC" -resize ${SIZE}x${SIZE} -background none -gravity center -extent ${SIZE}x${SIZE} "$RES/mipmap-$DENSITY/ic_launcher_foreground.png" || true
+          done
+
+          # ---------- Splash ----------
+          for d in mdpi:480x800 hdpi:480x800 xhdpi:720x1280 xxhdpi:960x1600 xxxhdpi:1280x1920; do
+            DENSITY="${d%%:*}"; SIZE="${d##*:}"
+            W="${SIZE%%x*}"; H="${SIZE##*x}"
+            mkdir -p "$RES/drawable-$DENSITY"
+            convert -size ${W}x${H} xc:'#05070e' \
+              \( "$SRC" -resize $((W/2))x$((W/2)) \) -gravity center -composite \
+              "$RES/drawable-$DENSITY/splash.png"
+          done
+
+          # Fallback splash in drawable (default)
+          mkdir -p "$RES/drawable"
+          cp "$RES/drawable-xxxhdpi/splash.png" "$RES/drawable/splash.png"
+
+          echo "✅ Icons & splash generated"
+
+      - name: Final sync
         run: npx cap sync android
 
-      - name: Build APK
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
         run: |
           cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp android/app/build/outputs/apk/debug/app-debug.apk output/our-tour.apk
+          ls -la output/
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+          name: our-tour-apk
+          path: output/our-tour.apk
+          retention-days: 30
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Create/Update Release
+        uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: v${{ github.run_number }}
-          files: android/app/build/outputs/apk/debug/*.apk
+          tag_name: latest
+          name: "Latest Build"
+          body: |
+            Auto build from commit ${{ github.sha }}
+            Build date: ${{ github.event.head_commit.timestamp }}
+          files: output/our-tour.apk
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
