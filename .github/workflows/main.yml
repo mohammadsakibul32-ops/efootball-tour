@@ -153,30 +153,21 @@ jobs:
           EOF
           fi
 
-      # ═══════════════════════════════════════════════════════════
-      # FIX #1: Delete Capacitor default adaptive icon XMLs
-      # These XMLs override our PNG icons — main reason icon not showing
-      # ═══════════════════════════════════════════════════════════
       - name: Delete default adaptive icon XMLs
         run: |
           RES=android/app/src/main/res
           echo "=== Before deletion ==="
           ls -la $RES/mipmap-anydpi-v26/ 2>/dev/null || true
           
-          # Delete adaptive icon XMLs that override PNG
           rm -rf $RES/mipmap-anydpi-v26
           rm -rf $RES/mipmap-anydpi
           
-          # Delete old foreground PNGs (we'll regenerate)
           find $RES -name "ic_launcher_foreground.png" -delete 2>/dev/null || true
           find $RES -name "ic_launcher_background.png" -delete 2>/dev/null || true
           
           echo "=== After deletion ==="
-          ls -la $RES/mipmap-anydpi-v26/ 2>/dev/null || echo "✅ mipmap-anydpi-v26 deleted"
+          ls -la $RES/mipmap-anydpi-v26/ 2>/dev/null || echo "✅ deleted"
 
-      # ═══════════════════════════════════════════════════════════
-      # FIX #2: Generate proper PNG launcher icons
-      # ═══════════════════════════════════════════════════════════
       - name: Generate Icons
         run: |
           set -e
@@ -186,14 +177,12 @@ jobs:
           echo "=== Source icon ==="
           identify "$SRC"
 
-          # Standard launcher icons (density → size)
           convert "$SRC" -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
           convert "$SRC" -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
           convert "$SRC" -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
           convert "$SRC" -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
           convert "$SRC" -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
 
-          # Round icons
           convert "$SRC" -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher_round.png"
           convert "$SRC" -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher_round.png"
           convert "$SRC" -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher_round.png"
@@ -203,9 +192,6 @@ jobs:
           echo "=== Verify icons ==="
           ls -la $RES/mipmap-xxxhdpi/
 
-      # ═══════════════════════════════════════════════════════════
-      # FIX #3: Generate splash screens at all densities
-      # ═══════════════════════════════════════════════════════════
       - name: Generate Splash Screens
         run: |
           set -e
@@ -214,24 +200,19 @@ jobs:
 
           echo "=== Generating splash screens ==="
 
-          # Portrait splash — dark bg + centered logo
-          convert -size 320x480   xc:'#05070e' \( "$SRC" -resize 160x160 \) -gravity center -composite "$RES/drawable-mdpi/splash.png"     2>/dev/null || (mkdir -p "$RES/drawable-mdpi" &&    convert -size 320x480   xc:'#05070e' \( "$SRC" -resize 160x160 \) -gravity center -composite "$RES/drawable-mdpi/splash.png")
-          mkdir -p "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi" "$RES/drawable"
+          mkdir -p "$RES/drawable-mdpi" "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi" "$RES/drawable"
 
+          convert -size 320x480   xc:'#05070e' \( "$SRC" -resize 160x160 \) -gravity center -composite "$RES/drawable-mdpi/splash.png"
           convert -size 480x800   xc:'#05070e' \( "$SRC" -resize 240x240 \) -gravity center -composite "$RES/drawable-hdpi/splash.png"
           convert -size 720x1280  xc:'#05070e' \( "$SRC" -resize 360x360 \) -gravity center -composite "$RES/drawable-xhdpi/splash.png"
           convert -size 960x1600  xc:'#05070e' \( "$SRC" -resize 480x480 \) -gravity center -composite "$RES/drawable-xxhdpi/splash.png"
           convert -size 1280x1920 xc:'#05070e' \( "$SRC" -resize 640x640 \) -gravity center -composite "$RES/drawable-xxxhdpi/splash.png"
 
-          # Default fallback
           cp "$RES/drawable-xxxhdpi/splash.png" "$RES/drawable/splash.png"
 
           echo "=== Verify splash ==="
           identify "$RES/drawable-xxxhdpi/splash.png"
 
-      # ═══════════════════════════════════════════════════════════
-      # FIX #4: Override launch_background.xml to use our splash
-      # ═══════════════════════════════════════════════════════════
       - name: Override splash background XML
         run: |
           RES=android/app/src/main/res
@@ -249,7 +230,6 @@ jobs:
           XMLEOF
           done
 
-          # Add splashBackground color
           COLORS=$RES/values/colors.xml
           if ! grep -q "splashBackground" "$COLORS"; then
             sed -i 's|</resources>|    <color name="splashBackground">#05070e</color>\n</resources>|' "$COLORS"
@@ -257,9 +237,6 @@ jobs:
 
           cat "$COLORS"
 
-      # ═══════════════════════════════════════════════════════════
-      # FIX #5: Override styles.xml for splash theme
-      # ═══════════════════════════════════════════════════════════
       - name: Override styles.xml
         run: |
           STYLES=android/app/src/main/res/values/styles.xml
@@ -302,17 +279,20 @@ jobs:
           cd android
           ./gradlew assembleDebug --stacktrace
 
-      - name: Rename APK
+      - name: Rename APK — both names for compatibility
         run: |
           mkdir -p output
           cp android/app/build/outputs/apk/debug/app-debug.apk output/our-tour.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk output/app-debug.apk
           ls -la output/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: our-tour-apk
-          path: output/our-tour.apk
+          path: |
+            output/our-tour.apk
+            output/app-debug.apk
           retention-days: 30
 
       - name: Create Release
@@ -323,7 +303,13 @@ jobs:
           name: "Latest Build"
           body: |
             Auto build from commit ${{ github.sha }}
-          files: output/our-tour.apk
+            
+            **Download:**
+            - our-tour.apk
+            - app-debug.apk (legacy name)
+          files: |
+            output/our-tour.apk
+            output/app-debug.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
