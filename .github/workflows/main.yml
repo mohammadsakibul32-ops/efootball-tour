@@ -43,18 +43,8 @@ jobs:
         run: |
           echo "=== Repo root files ==="
           ls -la
-          echo "=== Icons ==="
           if [ -f icon.png ]; then echo "✅ icon.png FOUND"; identify icon.png; fi
           if [ -f efcon.png ]; then echo "✅ efcon.png FOUND"; identify efcon.png; fi
-
-      - name: Download icon if missing
-        run: |
-          if [ ! -f icon.png ] && [ ! -f efcon.png ]; then
-            echo "📥 Downloading fallback icon…"
-            curl -L -o icon.png "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png" || true
-          fi
-          if [ -f efcon.png ] && [ ! -f icon.png ]; then cp efcon.png icon.png; fi
-          ls -la icon.png
 
       - name: Prepare www folder
         run: |
@@ -83,11 +73,11 @@ jobs:
             },
             "plugins": {
               "SplashScreen": {
-                "launchShowDuration": 2000,
+                "launchShowDuration": 2500,
                 "launchAutoHide": true,
                 "backgroundColor": "#05070e",
                 "androidSplashResourceName": "splash",
-                "androidScaleType": "CENTER_CROP",
+                "androidScaleType": "CENTER_INSIDE",
                 "showSpinner": false,
                 "splashFullScreen": true,
                 "splashImmersive": true
@@ -104,7 +94,6 @@ jobs:
         run: |
           npx cap init "OUR TOUR" com.ourefootballtour.app --web-dir www
           npx cap add android
-          npx cap sync android
 
       - name: Copy google-services.json
         run: |
@@ -138,37 +127,57 @@ jobs:
             sed -i 's|</application>|    <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="default" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@mipmap/ic_launcher" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/colorPrimary" />\n    </application>|' "$MF"
           fi
 
-      - name: Add colorPrimary
+      - name: Prepare colors.xml
         run: |
-          COLORS=android/app/src/main/res/values/colors.xml
-          if [ ! -f "$COLORS" ]; then
-            mkdir -p android/app/src/main/res/values
-            cat > "$COLORS" << 'EOF'
+          RES=android/app/src/main/res
+          mkdir -p "$RES/values"
+          cat > "$RES/values/colors.xml" << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <color name="colorPrimary">#05070e</color>
               <color name="colorPrimaryDark">#05070e</color>
               <color name="colorAccent">#22d3ee</color>
+              <color name="splashBackground">#05070e</color>
           </resources>
           EOF
-          fi
+          cat "$RES/values/colors.xml"
 
-      - name: Delete default adaptive icon XMLs
+      # ═══════════════════════════════════════════════════════════
+      # STEP 1: Delete ALL default Capacitor splash & icon files
+      # ═══════════════════════════════════════════════════════════
+      - name: Delete all default Capacitor splash and icon files
         run: |
           RES=android/app/src/main/res
-          echo "=== Before deletion ==="
-          ls -la $RES/mipmap-anydpi-v26/ 2>/dev/null || true
-          
-          rm -rf $RES/mipmap-anydpi-v26
-          rm -rf $RES/mipmap-anydpi
-          
+
+          echo "=== BEFORE CLEANUP ==="
+          find $RES -name "splash*" -o -name "ic_launcher*" -o -name "launch_background*" | sort
+
+          # Delete ALL splash files
+          find $RES -name "splash.png" -delete 2>/dev/null || true
+          find $RES -name "splash.xml" -delete 2>/dev/null || true
+          find $RES -name "splash.jpg" -delete 2>/dev/null || true
+
+          # Delete adaptive icon XMLs
+          rm -rf $RES/mipmap-anydpi-v26 2>/dev/null || true
+          rm -rf $RES/mipmap-anydpi 2>/dev/null || true
+
+          # Delete all default ic_launcher files
+          find $RES -name "ic_launcher.png" -delete 2>/dev/null || true
+          find $RES -name "ic_launcher_round.png" -delete 2>/dev/null || true
           find $RES -name "ic_launcher_foreground.png" -delete 2>/dev/null || true
           find $RES -name "ic_launcher_background.png" -delete 2>/dev/null || true
-          
-          echo "=== After deletion ==="
-          ls -la $RES/mipmap-anydpi-v26/ 2>/dev/null || echo "✅ deleted"
+          find $RES -name "ic_launcher.xml" -delete 2>/dev/null || true
 
-      - name: Generate Icons
+          # Delete default launch_background.xml
+          find $RES -name "launch_background.xml" -delete 2>/dev/null || true
+
+          echo "=== AFTER CLEANUP ==="
+          find $RES -name "splash*" -o -name "ic_launcher*" -o -name "launch_background*" | sort || echo "All cleared ✅"
+
+      # ═══════════════════════════════════════════════════════════
+      # STEP 2: Generate launcher icons from icon.png
+      # ═══════════════════════════════════════════════════════════
+      - name: Generate Launcher Icons
         run: |
           set -e
           SRC="icon.png"
@@ -177,12 +186,16 @@ jobs:
           echo "=== Source icon ==="
           identify "$SRC"
 
+          mkdir -p "$RES/mipmap-mdpi" "$RES/mipmap-hdpi" "$RES/mipmap-xhdpi" "$RES/mipmap-xxhdpi" "$RES/mipmap-xxxhdpi"
+
+          # Regular icons
           convert "$SRC" -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher.png"
           convert "$SRC" -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher.png"
           convert "$SRC" -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher.png"
           convert "$SRC" -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
           convert "$SRC" -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
 
+          # Round icons
           convert "$SRC" -resize 48x48   -background none -gravity center -extent 48x48   "$RES/mipmap-mdpi/ic_launcher_round.png"
           convert "$SRC" -resize 72x72   -background none -gravity center -extent 72x72   "$RES/mipmap-hdpi/ic_launcher_round.png"
           convert "$SRC" -resize 96x96   -background none -gravity center -extent 96x96   "$RES/mipmap-xhdpi/ic_launcher_round.png"
@@ -190,34 +203,95 @@ jobs:
           convert "$SRC" -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher_round.png"
 
           echo "=== Verify icons ==="
-          ls -la $RES/mipmap-xxxhdpi/
+          ls -la "$RES/mipmap-xxxhdpi/"
 
+      # ═══════════════════════════════════════════════════════════
+      # STEP 3: Generate splash screens with BIGGER icon
+      # Icon size = 60% of splash width for better visibility
+      # ═══════════════════════════════════════════════════════════
       - name: Generate Splash Screens
         run: |
           set -e
           SRC="icon.png"
           RES=android/app/src/main/res
 
-          echo "=== Generating splash screens ==="
+          echo "=== Generating BIG splash screens ==="
 
-          mkdir -p "$RES/drawable-mdpi" "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi" "$RES/drawable"
+          # Create all possible density folders
+          mkdir -p "$RES/drawable" "$RES/drawable-mdpi" "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi"
+          mkdir -p "$RES/drawable-port-mdpi" "$RES/drawable-port-hdpi" "$RES/drawable-port-xhdpi" "$RES/drawable-port-xxhdpi" "$RES/drawable-port-xxxhdpi"
+          mkdir -p "$RES/drawable-land-mdpi" "$RES/drawable-land-hdpi" "$RES/drawable-land-xhdpi" "$RES/drawable-land-xxhdpi" "$RES/drawable-land-xxxhdpi"
 
-          convert -size 320x480   xc:'#05070e' \( "$SRC" -resize 160x160 \) -gravity center -composite "$RES/drawable-mdpi/splash.png"
-          convert -size 480x800   xc:'#05070e' \( "$SRC" -resize 240x240 \) -gravity center -composite "$RES/drawable-hdpi/splash.png"
-          convert -size 720x1280  xc:'#05070e' \( "$SRC" -resize 360x360 \) -gravity center -composite "$RES/drawable-xhdpi/splash.png"
-          convert -size 960x1600  xc:'#05070e' \( "$SRC" -resize 480x480 \) -gravity center -composite "$RES/drawable-xxhdpi/splash.png"
-          convert -size 1280x1920 xc:'#05070e' \( "$SRC" -resize 640x640 \) -gravity center -composite "$RES/drawable-xxxhdpi/splash.png"
+          # Portrait splash with BIG icon (60% of width)
+          # mdpi: 320x480, icon 192x192
+          convert -size 320x480 xc:'#05070e' \
+            \( "$SRC" -resize 192x192 \) -gravity center -composite \
+            "$RES/drawable-mdpi/splash.png"
 
-          cp "$RES/drawable-xxxhdpi/splash.png" "$RES/drawable/splash.png"
+          # hdpi: 480x800, icon 288x288
+          convert -size 480x800 xc:'#05070e' \
+            \( "$SRC" -resize 288x288 \) -gravity center -composite \
+            "$RES/drawable-hdpi/splash.png"
 
-          echo "=== Verify splash ==="
+          # xhdpi: 720x1280, icon 432x432
+          convert -size 720x1280 xc:'#05070e' \
+            \( "$SRC" -resize 432x432 \) -gravity center -composite \
+            "$RES/drawable-xhdpi/splash.png"
+
+          # xxhdpi: 960x1600, icon 576x576
+          convert -size 960x1600 xc:'#05070e' \
+            \( "$SRC" -resize 576x576 \) -gravity center -composite \
+            "$RES/drawable-xxhdpi/splash.png"
+
+          # xxxhdpi: 1280x1920, icon 768x768
+          convert -size 1280x1920 xc:'#05070e' \
+            \( "$SRC" -resize 768x768 \) -gravity center -composite \
+            "$RES/drawable-xxxhdpi/splash.png"
+
+          # Default fallback
+          cp "$RES/drawable-xhdpi/splash.png" "$RES/drawable/splash.png"
+
+          # Portrait variants (some devices use these)
+          cp "$RES/drawable-mdpi/splash.png"    "$RES/drawable-port-mdpi/splash.png"
+          cp "$RES/drawable-hdpi/splash.png"    "$RES/drawable-port-hdpi/splash.png"
+          cp "$RES/drawable-xhdpi/splash.png"   "$RES/drawable-port-xhdpi/splash.png"
+          cp "$RES/drawable-xxhdpi/splash.png"  "$RES/drawable-port-xxhdpi/splash.png"
+          cp "$RES/drawable-xxxhdpi/splash.png" "$RES/drawable-port-xxxhdpi/splash.png"
+
+          # Landscape splash (rotated dimensions)
+          convert -size 480x320 xc:'#05070e' \
+            \( "$SRC" -resize 192x192 \) -gravity center -composite \
+            "$RES/drawable-land-mdpi/splash.png"
+
+          convert -size 800x480 xc:'#05070e' \
+            \( "$SRC" -resize 288x288 \) -gravity center -composite \
+            "$RES/drawable-land-hdpi/splash.png"
+
+          convert -size 1280x720 xc:'#05070e' \
+            \( "$SRC" -resize 432x432 \) -gravity center -composite \
+            "$RES/drawable-land-xhdpi/splash.png"
+
+          convert -size 1600x960 xc:'#05070e' \
+            \( "$SRC" -resize 576x576 \) -gravity center -composite \
+            "$RES/drawable-land-xxhdpi/splash.png"
+
+          convert -size 1920x1280 xc:'#05070e' \
+            \( "$SRC" -resize 768x768 \) -gravity center -composite \
+            "$RES/drawable-land-xxxhdpi/splash.png"
+
+          echo "=== Verify all splash files ==="
+          find "$RES" -name "splash.png" | sort
+          echo "=== Splash xxxhdpi details ==="
           identify "$RES/drawable-xxxhdpi/splash.png"
 
-      - name: Override splash background XML
+      # ═══════════════════════════════════════════════════════════
+      # STEP 4: Create launch_background.xml (referenced by theme)
+      # ═══════════════════════════════════════════════════════════
+      - name: Create launch_background.xml
         run: |
           RES=android/app/src/main/res
 
-          for d in drawable drawable-land-mdpi drawable-land-hdpi drawable-land-xhdpi drawable-land-xxhdpi drawable-land-xxxhdpi drawable-port-mdpi drawable-port-hdpi drawable-port-xhdpi drawable-port-xxhdpi drawable-port-xxxhdpi; do
+          for d in drawable drawable-port-mdpi drawable-port-hdpi drawable-port-xhdpi drawable-port-xxhdpi drawable-port-xxxhdpi drawable-land-mdpi drawable-land-hdpi drawable-land-xhdpi drawable-land-xxhdpi drawable-land-xxxhdpi; do
             mkdir -p "$RES/$d"
             cat > "$RES/$d/launch_background.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -230,20 +304,19 @@ jobs:
           XMLEOF
           done
 
-          COLORS=$RES/values/colors.xml
-          if ! grep -q "splashBackground" "$COLORS"; then
-            sed -i 's|</resources>|    <color name="splashBackground">#05070e</color>\n</resources>|' "$COLORS"
-          fi
+          echo "✅ launch_background.xml created in all folders"
 
-          cat "$COLORS"
-
+      # ═══════════════════════════════════════════════════════════
+      # STEP 5: Create/Override styles.xml (splash theme)
+      # ═══════════════════════════════════════════════════════════
       - name: Override styles.xml
         run: |
           STYLES=android/app/src/main/res/values/styles.xml
-          
+
           cat > "$STYLES" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
+
               <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
                   <item name="colorPrimary">@color/colorPrimary</item>
                   <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
@@ -263,10 +336,38 @@ jobs:
                   <item name="android:windowContentOverlay">@null</item>
                   <item name="android:windowDisablePreview">false</item>
               </style>
+
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar" />
           </resources>
           XMLEOF
 
           echo "✅ styles.xml replaced"
+
+      - name: Fix styles.xml duplicate (safety)
+        run: |
+          STYLES=android/app/src/main/res/values/styles.xml
+          cat > "$STYLES" << 'XMLEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+                  <item name="colorPrimary">@color/colorPrimary</item>
+                  <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+                  <item name="colorAccent">@color/colorAccent</item>
+              </style>
+              <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.NoActionBar">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+                  <item name="android:background">@null</item>
+              </style>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:background">@drawable/launch_background</item>
+                  <item name="android:windowBackground">@drawable/launch_background</item>
+                  <item name="android:windowFullscreen">true</item>
+                  <item name="android:windowContentOverlay">@null</item>
+                  <item name="android:windowDisablePreview">false</item>
+              </style>
+          </resources>
+          XMLEOF
 
       - name: Final sync
         run: npx cap sync android
@@ -279,7 +380,7 @@ jobs:
           cd android
           ./gradlew assembleDebug --stacktrace
 
-      - name: Rename APK — both names for compatibility
+      - name: Rename APK — both names
         run: |
           mkdir -p output
           cp android/app/build/outputs/apk/debug/app-debug.apk output/our-tour.apk
@@ -303,10 +404,7 @@ jobs:
           name: "Latest Build"
           body: |
             Auto build from commit ${{ github.sha }}
-            
-            **Download:**
-            - our-tour.apk
-            - app-debug.apk (legacy name)
+            Download: our-tour.apk or app-debug.apk
           files: |
             output/our-tour.apk
             output/app-debug.apk
