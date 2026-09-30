@@ -554,10 +554,9 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 </div>
 
 <div id="toast" class="toast"></div>
-
 <script>
 /* ================================================================
-   OUR EFOOTBALL TOUR v3.0 — ONESIGNAL BUILD
+   OUR EFOOTBALL TOUR v3.1 — ONESIGNAL + FIXED AUTO-APPROVE
    ================================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyBgeeZtY-q5AN7JwuXFF5sBoTM9VU7ono8",
@@ -573,7 +572,11 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const FV = firebase.firestore.FieldValue;
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
-
+/* ════════════════════════════════════════════════════════════════
+   APP VERSION — প্রতিবার নতুন APK build করার সময় এই number বাড়াবেন
+   Force Update enable করলে পুরনো version blocked হবে
+   ════════════════════════════════════════════════════════════════ */
+const APP_VERSION = 1;
 const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png";
 
 /* ════════════════════════════════════════════════════════════════
@@ -609,17 +612,9 @@ function getOS(){
 
 async function initFCM(uid){
   if(!uid){ osLog("No UID", "err"); return "no-uid"; }
-
-  if(!window.Capacitor){
-    osLog("Waiting for Capacitor…", "wait");
-    return "no-capacitor";
-  }
-
+  if(!window.Capacitor){ osLog("Waiting for Capacitor…", "wait"); return "no-capacitor"; }
   const OS = getOS();
-  if(!OS){
-    osLog("OneSignal plugin NOT loaded yet…", "wait");
-    return "no-plugin";
-  }
+  if(!OS){ osLog("OneSignal plugin NOT loaded yet…", "wait"); return "no-plugin"; }
 
   try{
     if(!__osInit){
@@ -627,7 +622,6 @@ async function initFCM(uid){
         if(OS.setAppId) OS.setAppId(ONESIGNAL_APP_ID);
         if(OS.initialize) OS.initialize(ONESIGNAL_APP_ID);
       }catch(e){ console.warn("init", e); }
-
       try{
         OS.Notifications.addEventListener('click', (e) => console.log("👆 OS click:", e));
         OS.Notifications.addEventListener('foregroundWillDisplay', (e) => {
@@ -640,17 +634,14 @@ async function initFCM(uid){
           osLog(g ? "Permission granted ✓" : "Permission denied", g ? "ok" : "err");
         });
       }catch(e){ console.warn("listeners", e); }
-
       try{
         if(OS.Notifications && OS.Notifications.requestPermission){
           OS.Notifications.requestPermission(true);
         }
       }catch(e){}
-
       __osInit = true;
       osLog("OneSignal initialized ✓", "ok");
     }
-
     if(!__osLoggedIn && OS.login){
       try{
         await OS.login(uid);
@@ -662,7 +653,6 @@ async function initFCM(uid){
         return "retry";
       }
     }
-
     try{
       await db.collection("users").doc(uid).set({
         fcmToken: "onesignal:" + uid,
@@ -671,7 +661,6 @@ async function initFCM(uid){
         pushProvider: "onesignal"
       }, {merge: true});
     }catch(e){}
-
     return "ok";
   }catch(e){
     console.error("OneSignal error:", e);
@@ -682,17 +671,12 @@ async function initFCM(uid){
 
 function startOSRetry(uid){
   if(__osLoggedIn) return;
-  if(__osAttempts >= OS_MAX_ATTEMPTS){
-    osLog("Max retries reached. Tap Retry.", "err");
-    return;
-  }
+  if(__osAttempts >= OS_MAX_ATTEMPTS){ osLog("Max retries reached. Tap Retry.", "err"); return; }
   __osAttempts++;
   const delay = Math.min(20000, 1500 * Math.pow(1.35, __osAttempts));
   setTimeout(async ()=>{
     const r = await initFCM(uid);
-    if(!__osLoggedIn && r !== "denied"){
-      startOSRetry(uid);
-    }
+    if(!__osLoggedIn && r !== "denied"){ startOSRetry(uid); }
   }, delay);
 }
 
@@ -882,7 +866,7 @@ auth.onAuthStateChanged(async u=>{
     setTimeout(()=>{ try{ initFCM(u.uid) }catch(e){} }, 2500);
     setTimeout(()=>{ try{ initFCM(u.uid) }catch(e){} }, 5000);
     startOSRetry(u.uid);
-
+checkForceUpdate();
     renderDrawer();
     loadBranding();
     loadDashboard();
@@ -890,7 +874,7 @@ auth.onAuthStateChanged(async u=>{
     setTimeout(checkAutoApprove,2500);
   }catch(err){console.error(err);toast("Failed to load profile","err")}
 });
-
+setInterval(checkForceUpdate, 300000);
 async function loadBranding(){
   try{
     const s=await db.collection("settings").doc("platform").get({source:"server"});
@@ -901,6 +885,48 @@ async function loadBranding(){
     if(d.appName){$("tbName").innerHTML=esc(d.appName).toUpperCase().replace(/(EFOOTBALL|FOOTBALL)/i,'<span class="hl">$1</span>')}
     if(d.tagline)$("tbTag").textContent=d.tagline;
   }catch(e){}
+}
+/* ════════════════════════════════════════════════════════════════
+   FORCE UPDATE CHECK
+   ════════════════════════════════════════════════════════════════ */
+async function checkForceUpdate(){
+  try{
+    const s = await db.collection("settings").doc("app").get({source:"server"});
+    if(!s.exists) return;
+    const d = s.data();
+    if(!d.forceUpdate) return;
+
+    const minV = Number(d.minVersion || 1);
+    if(APP_VERSION >= minV) return;
+
+    console.warn("[Version] Update required. Current:", APP_VERSION, "Min:", minV);
+    showForceUpdateModal(d.updateMessage, d.updateUrl);
+
+  }catch(e){ console.log("Version check failed:", e.message); }
+}
+window.checkForceUpdate = checkForceUpdate;
+
+function showForceUpdateModal(msg, url){
+  if(document.getElementById("forceUpdateOverlay")) return;
+
+  const div = document.createElement("div");
+  div.id = "forceUpdateOverlay";
+  div.style.cssText = "position:fixed;inset:0;z-index:99999;background:linear-gradient(160deg,#05070e,#0a0f1f);display:flex;align-items:center;justify-content:center;padding:24px;";
+
+  const finalUrl = url || "https://github.com/mohammadsakibul32-ops/efootball-tour/releases/latest";
+  const finalMsg = msg || "নতুন version এসেছে! অনুগ্রহ করে app আপডেট করুন।";
+
+  div.innerHTML =
+    '<div style="max-width:400px;width:100%;text-align:center;background:linear-gradient(160deg,#0c1122,#101731);border:1px solid rgba(34,211,238,.35);border-radius:24px;padding:32px 24px;box-shadow:0 24px 80px rgba(0,0,0,.7)">'+
+    '<div style="font-size:64px;margin-bottom:16px">🔄</div>'+
+    '<div style="font-family:\'Oswald\',sans-serif;font-size:22px;font-weight:700;text-transform:uppercase;color:#fff;margin-bottom:12px;letter-spacing:.05em">Update Required</div>'+
+    '<div style="font-size:14px;color:#c5d3e1;line-height:1.7;margin-bottom:24px">'+esc(finalMsg)+'</div>'+
+    '<a href="'+esc(finalUrl)+'" target="_blank" rel="noopener" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;background:linear-gradient(135deg,#22d3ee,#8b5cf6);color:#fff;border-radius:14px;font-family:\'Oswald\',sans-serif;font-size:16px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;text-decoration:none;box-shadow:0 8px 24px rgba(34,211,238,.35)">📥 UPDATE NOW</a>'+
+    '<div style="font-size:11.5px;color:#6f7ea3;margin-top:18px;line-height:1.6">App আপডেট না করলে ব্যবহার করা যাবে না।</div>'+
+    '<div style="font-size:10px;color:#4a5563;margin-top:10px;font-family:monospace">Your app: v'+APP_VERSION+'</div>'+
+    '</div>';
+
+  document.body.appendChild(div);
 }
 
 async function loadDashboard(){
@@ -999,12 +1025,11 @@ async function loadTopPlayers(){
     let h="",r=1;
     snap.forEach(doc=>{
       const u=doc.data();
-      const isMe=S.user&&doc.id===S.user.uid;
       const name=u.nickname||u.displayName||u.name||"Player";
       const av=u.avatarUrl||u.photoURL||"";
       const cls=r===1?"rank1":r===2?"rank2":r===3?"rank3":"";
       const crown=r===1?"👑":r===2?"🥈":r===3?"🥉":"";
-      h+='<div class="tp-card'+(isMe?' me':'')+'">';
+      h+='<div class="tp-card">';
       if(crown)h+='<div class="tp-crown">'+crown+'</div>';
       h+='<div class="tp-av '+cls+'"><div class="tp-av-in">'+(av?'<img src="'+esc(av)+'">':esc(name.charAt(0).toUpperCase()))+'</div></div>';
       h+='<div class="tp-name">'+esc(name)+'</div>';
@@ -1162,13 +1187,6 @@ async function viewTournament(id){
     h+='<div class="stat-card pu"><div class="lbl">Prize Pool</div><div class="val">৳'+money(m.prize1||m.prize||0)+'</div></div>';
     h+='<div class="stat-card gr"><div class="lbl">Slots</div><div class="val">'+jc+'/'+maxP+'</div></div>';
     h+='<div class="stat-card"><div class="lbl">Remaining</div><div class="val">'+(maxP-jc)+'</div></div></div>';
-    if(isBig && (m.prize2||m.prize3)){
-      h+='<div class="sec-head" style="margin-top:8px"><h2>Prize Distribution</h2></div>';
-      h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
-      h+='<div style="padding:10px;background:var(--panel);border-radius:10px;text-align:center;border:1px solid var(--line)"><div style="font-size:10px;color:var(--muted)">🥇 1st</div><div style="font-family:var(--f-head);font-weight:700;color:var(--gold);margin-top:4px">৳'+money(m.prize1||0)+'</div></div>';
-      h+='<div style="padding:10px;background:var(--panel);border-radius:10px;text-align:center;border:1px solid var(--line)"><div style="font-size:10px;color:var(--muted)">🥈 2nd</div><div style="font-family:var(--f-head);font-weight:700;color:#e0e0e0;margin-top:4px">৳'+money(m.prize2||0)+'</div></div>';
-      h+='<div style="padding:10px;background:var(--panel);border-radius:10px;text-align:center;border:1px solid var(--line)"><div style="font-size:10px;color:var(--muted)">🥉 3rd</div><div style="font-family:var(--f-head);font-weight:700;color:#cd7f32;margin-top:4px">৳'+money(m.prize3||0)+'</div></div></div>';
-    }
     if(m.rules){
       h+='<div class="sec-head" style="margin-top:8px"><h2>📋 Rules</h2></div>';
       h+='<div class="note" style="white-space:pre-wrap">'+esc(m.rules)+'</div>';
@@ -1243,34 +1261,12 @@ async function joinMatch(id){
       }
     });
     try{await db.collection("notifications").add({userId:S.user.uid,title:"🎮 Match Joined",message:'You joined "'+(m.title||"Match")+'".',type:"match",read:false,createdAt:FV.serverTimestamp()})}catch(e){}
-    const maxP3=m.maxPlayers||((m.matchType||"solo").toLowerCase()==="big"?10:2);
-    if(newCount>=maxP3)await autoCreateNext(m);
     toast("✅ Joined successfully!","ok");
     hideLoad();
     loadTournaments();loadDashboard();
   }catch(e){hideLoad();console.error(e);toast(e.message||"Join failed","err")}
 }
 window.joinMatch=joinMatch;
-
-async function autoCreateNext(old){
-  try{
-    const s=await db.collection("settings").doc("platform").get();
-    const sd=s.exists?s.data():{};
-    if(sd.autoCreateNext===false)return;
-    await db.collection("matches").add({
-      title:old.title||"Match",matchType:old.matchType||"solo",
-      entryFee:Number(old.entryFee||0),
-      prize1:Number(old.prize1||old.prize||0),prize2:Number(old.prize2||0),prize3:Number(old.prize3||0),
-      prize:Number(old.prize||old.prize1||0),
-      maxPlayers:old.maxPlayers||((old.matchType||"solo").toLowerCase()==="big"?10:2),
-      rules:old.rules||"",matchUrl:old.matchUrl||"",bannerUrl:old.bannerUrl||"",
-      timerMinutes:old.timerMinutes||0,
-      status:"Open",joinedUids:[],joinedPlayers:[],playerIds:[],playerUidArray:[],
-      autoCreated:true,parentMatchId:old.__id||"",
-      createdAt:FV.serverTimestamp(),updatedAt:FV.serverTimestamp()
-    });
-  }catch(e){console.error("Auto-create fail:",e.message)}
-}
 
 async function loadMatches(){
   const box=$("matchList");
@@ -1359,7 +1355,6 @@ async function openRoom(id){
     h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">';
     h+='<button class="btn btn-success lg" onclick="openModal(\'resultModal\')">🏆 SUBMIT</button>';
     h+='<button class="btn btn-danger lg" onclick="openModal(\'reportModal\')">🚨 REPORT</button></div>';
-    if(m.bannerUrl){h+='<div style="width:100%;height:120px;border-radius:12px;overflow:hidden;margin-bottom:12px;background:var(--panel3)"><img src="'+esc(m.bannerUrl)+'" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.style.display=\'none\'"></div>'}
     if(isBig && m.roomCode){
       h+='<div class="card" style="border-color:var(--line2)">';
       h+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase">🔑 Room Code</div>';
@@ -1478,61 +1473,171 @@ async function sendChat(){
 window.sendChat=sendChat;
 $("chatInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();sendChat()}});
 
+/* ════════════════════════════════════════════════════════════════
+   AUTO-APPROVE — FIXED FOR NEW NAGAD SMS FORMAT
+   ════════════════════════════════════════════════════════════════ */
 async function checkAutoApprove(){
-  if(S.autoApproveRunning||!S.user)return;
-  S.autoApproveRunning=true;
+  if(S.autoApproveRunning || !S.user) return;
+  S.autoApproveRunning = true;
   try{
-    const pending=await db.collection("payments").where("userId","==",S.user.uid).where("status","==","Pending").limit(20).get({source:"server"});
-    if(pending.empty){S.autoApproveRunning=false;return}
-    const sms=await db.collection("sms_webhooks").orderBy("phoneTimestamp","desc").limit(50).get({source:"server"});
-    if(sms.empty){S.autoApproveRunning=false;return}
-    const map={};
-    sms.forEach(d=>{const s=d.data();const r=parseSMS(s.rawText||"");if(r&&r.trxId)map[r.trxId]=r});
-    let approved=0;
-    for(const doc of pending.docs){
-      const pay=doc.data();
-      const trx=String(pay.trxId||"").trim();
-      const amt=Number(pay.amount||0);
-      if(!trx||!map[trx])continue;
-      if(Math.abs(map[trx].amount-amt)>1)continue;
-      try{
-        const userRef=db.collection("users").doc(S.user.uid);
-        const payRef=doc.ref;
-        const sd=map[trx];
-        await db.runTransaction(async t=>{
-          const us=await t.get(userRef);
-          if(!us.exists)throw new Error("User missing");
-          const u=us.data();
-          const ob=Number(u.walletBalance||0);
-          t.update(userRef,{walletBalance:ob+amt,updatedAt:FV.serverTimestamp()});
-          t.update(payRef,{status:"Approved",autoApproved:true,approvedAt:FV.serverTimestamp(),matchedMethod:sd.method});
-          t.set(db.collection("transactions").doc(),{userId:S.user.uid,type:"deposit",amount:amt,method:sd.method||pay.method||"bKash",status:"Completed",autoApproved:true,trxId:trx,createdAt:FV.serverTimestamp()});
-          t.set(db.collection("notifications").doc(),{userId:S.user.uid,title:"✅ ডিপোজিট স্বয়ংক্রিয়ভাবে অনুমোদিত",message:"৳"+amt+" "+(sd.method||"bKash")+" স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে",type:"wallet",read:false,createdAt:FV.serverTimestamp()});
-        });
-        approved++;
-      }catch(e){console.log("Approve failed:",e.message)}
-    }
-    if(approved>0){toast("✅ "+approved+" deposit auto-approved","ok");loadWallet()}
-  }catch(e){console.log("[AutoApprove]",e.code||e.message)}
-  S.autoApproveRunning=false;
-}
-window.checkAutoApprove=checkAutoApprove;
+    // Get ALL pending payments (not just current user)
+    const pending = await db.collection("payments")
+      .where("status", "==", "Pending")
+      .limit(50)
+      .get({ source: "server" });
 
+    if(pending.empty){ S.autoApproveRunning = false; return; }
+
+    // Get recent SMS
+    const sms = await db.collection("sms_webhooks")
+      .orderBy("phoneTimestamp", "desc")
+      .limit(100)
+      .get({ source: "server" });
+
+    if(sms.empty){ S.autoApproveRunning = false; return; }
+
+    // Parse all SMS into a map
+    const map = {};
+    sms.forEach(d=>{
+      const s = d.data();
+      const r = parseSMS(s.rawText || "");
+      if(r && r.trxId) map[r.trxId] = r;
+    });
+
+    console.log("[AutoApprove] Checked", pending.size, "pending,", Object.keys(map).length, "SMS");
+
+    let approved = 0;
+    for(const doc of pending.docs){
+      const pay = doc.data();
+      const trx = String(pay.trxId || "").trim().toUpperCase();
+      const amt = Number(pay.amount || 0);
+
+      if(!trx) continue;
+      if(!map[trx]) continue;
+      if(Math.abs(map[trx].amount - amt) > 1) continue;
+
+      try{
+        const userRef = db.collection("users").doc(pay.userId);
+        const payRef = doc.ref;
+        const sd = map[trx];
+
+        await db.runTransaction(async t=>{
+          const us = await t.get(userRef);
+          if(!us.exists) throw new Error("User missing");
+
+          const ub = Number(us.data().walletBalance || 0);
+
+          t.update(userRef, {
+            walletBalance: ub + amt,
+            updatedAt: FV.serverTimestamp()
+          });
+
+          t.update(payRef, {
+            status: "Approved",
+            autoApproved: true,
+            approvedAt: FV.serverTimestamp(),
+            matchedMethod: sd.method
+          });
+
+          t.set(db.collection("transactions").doc(), {
+            userId: pay.userId,
+            type: "deposit",
+            amount: amt,
+            method: sd.method || pay.method || "bKash",
+            status: "Completed",
+            autoApproved: true,
+            trxId: trx,
+            createdAt: FV.serverTimestamp()
+          });
+
+          t.set(db.collection("notifications").doc(), {
+            userId: pay.userId,
+            title: "✅ ডিপোজিট অনুমোদিত",
+            message: "৳" + amt + " " + (sd.method || "bKash") + " স্বয়ংক্রিয়ভাবে অনুমোদিত হয়েছে",
+            type: "wallet",
+            read: false,
+            createdAt: FV.serverTimestamp()
+          });
+        });
+
+        approved++;
+        console.log("[AutoApprove] ✅ Approved:", trx, "৳", amt);
+      }catch(e){ console.error("[AutoApprove] Failed:", e.message); }
+    }
+
+    if(approved > 0){
+      toast("✅ " + approved + " deposit auto-approved", "ok");
+      if(S.user) loadWallet();
+    }
+  }catch(e){ console.log("[AutoApprove]", e.code || e.message); }
+  S.autoApproveRunning = false;
+}
+window.checkAutoApprove = checkAutoApprove;
+
+/* ════ SMS PARSER — handles bKash + Nagad new & old formats ════ */
 function parseSMS(text){
-  if(!text)return null;
-  if(text.indexOf("[sms_message]")!==-1||text.indexOf("%text%")!==-1)return null;
-  let m=text.match(/received\s+Tk\.?\s*([\d,]+\.?\d*)\s+from\s+(\d{11}).*?TrxID\s+([A-Z0-9]+)/i);
-  if(m)return{method:"bKash",amount:parseFloat(String(m[1]).replace(/,/g,"")),sender:m[2],trxId:m[3]};
-  if(/Cash\s+In\s+Received/i.test(text)){
-    const a=text.match(/Amount:?\s*Tk\.?\s*([\d,]+\.?\d*)/i);
-    const s=text.match(/Uddokta:?\s*(\d{11})/i);
-    const t=text.match(/TxnID:?\s*([A-Z0-9]+)/i);
-    if(a&&s&&t)return{method:"Nagad",amount:parseFloat(String(a[1]).replace(/,/g,"")),sender:s[1],trxId:t[1]};
+  if(!text) return null;
+  const t = String(text);
+  if(t.indexOf("[sms_message]") !== -1 || t.indexOf("%text%") !== -1) return null;
+
+  let amount = null, trxId = null, sender = null, method = "Unknown";
+
+  // bKash: "You have received Tk 500.00 from 01712345678. TrxID ABC123"
+  let m = t.match(/received\s+Tk\.?\s*([\d,]+\.?\d*)\s+from\s+(\+?88?)?(\d{11})/i);
+  if(m){
+    amount = parseFloat(String(m[1]).replace(/,/g,""));
+    sender = m[3];
+    method = "bKash";
   }
-  m=text.match(/Money\s+Received.*?Tk\.?\s*([\d,]+)\s+from\s+(\d{11}).*?(?:TxnID|Txn ID)[:\s]+([A-Z0-9]+)/i);
-  if(m)return{method:"Nagad",amount:parseFloat(String(m[1]).replace(/,/g,"")),sender:m[2],trxId:m[3]};
+
+  // Nagad: "Money Received Tk 500.00 Sender: 01712345678"
+  if(!amount){
+    m = t.match(/Money\s+Received.*?Tk\.?\s*([\d,]+\.?\d*)/i);
+    if(m){
+      amount = parseFloat(String(m[1]).replace(/,/g,""));
+      method = "Nagad";
+    }
+  }
+  // Nagad alt: "Cash In Received ... Amount: Tk 500"
+  if(!amount){
+    m = t.match(/Cash\s+In\s+Received.*?Amount[:\s]+Tk\.?\s*([\d,]+\.?\d*)/i);
+    if(m){
+      amount = parseFloat(String(m[1]).replace(/,/g,""));
+      method = "Nagad";
+    }
+  }
+  // Generic: "Amount: Tk 500"
+  if(!amount){
+    m = t.match(/Amount[:\s]+Tk\.?\s*([\d,]+\.?\d*)/i);
+    if(m){
+      amount = parseFloat(String(m[1]).replace(/,/g,""));
+      if(method === "Unknown") method = "Nagad";
+    }
+  }
+
+  // Sender: "Sender: 01712345678" OR "from 01712345678"
+  if(!sender){
+    m = t.match(/Sender[:\s]+(\+?88?)?(\d{11})/i);
+    if(m) sender = m[2];
+  }
+  if(!sender){
+    m = t.match(/from\s+(\+?88?)?(\d{11})/i);
+    if(m) sender = m[2];
+  }
+
+  // TrxID / TxnID / Txn ID / Transaction ID
+  m = t.match(/(?:TrxID|TxnID|Txn\s*ID|Transaction\s*ID)[:\s]+([A-Z0-9]{6,})/i);
+  if(m) trxId = m[1].toUpperCase();
+
+  console.log("[SMS Parser]", { amount, trxId, sender, method, raw: t.substring(0,100) });
+
+  if(amount && trxId){
+    return { method, amount, sender: sender || "", trxId };
+  }
   return null;
 }
+window.parseSMS = parseSMS;
+
 setInterval(()=>{if(S.user)checkAutoApprove()},25000);
 
 async function loadWallet(){
@@ -1759,13 +1864,14 @@ async function openAvatarPicker(){
   const grid=$("avatarGrid");
   grid.innerHTML='<div class="skeleton" style="grid-column:1/-1;height:200px"></div>';
   try{
-    const snap=await db.collection("avatars").where("active","==",true).limit(200).get({source:"server"});
+    const snap=await db.collection("avatars").limit(200).get({source:"server"});
     if(snap.empty){grid.innerHTML='<div class="empty" style="grid-column:1/-1"><span class="ic">🎨</span>No avatars available</div>';return}
     let h="";
     snap.forEach(doc=>{
       const a=doc.data();
-      if(!a.url)return;
-      h+='<div class="avatar-item" data-url="'+esc(a.url)+'" onclick="pickAvatar(this)"><img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'"></div>';
+      const u=a.url||a.imageUrl||a.image||a.src||"";
+      if(!u) return;
+      h+='<div class="avatar-item" data-url="'+esc(u)+'" onclick="pickAvatar(this)"><img src="'+esc(u)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'"></div>';
     });
     grid.innerHTML=h||'<div class="empty" style="grid-column:1/-1">No avatars available</div>';
   }catch(e){console.error(e);grid.innerHTML='<div class="empty" style="grid-column:1/-1">Load failed</div>'}
@@ -1949,29 +2055,11 @@ function startTimers(){
   });
 }
 
-setInterval(async()=>{
-  if(!S.user)return;
-  try{
-    const snap=await db.collection("matches").limit(50).get({source:"server"});
-    const now=Date.now();
-    snap.forEach(async doc=>{
-      const m=doc.data();
-      const st=(m.status||"").toLowerCase();
-      if(["completed","deleted","cancelled"].indexOf(st)!==-1)return;
-      const exp=m.expiresAt||m.timerEnd;
-      if(!exp)return;
-      const end=exp.toMillis?exp.toMillis():new Date(exp).getTime();
-      if(isNaN(end))return;
-      if(now>end+60000){try{await db.collection("matches").doc(doc.id).update({status:"Deleted",deletedAt:FV.serverTimestamp(),autoDeleted:true})}catch(e){}}
-    });
-  }catch(e){}
-},60000);
-
 document.querySelectorAll(".modal").forEach(m=>{
   m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("show")});
 });
 
-console.log("✅ OUR EFOOTBALL TOUR v3.0 — OneSignal build loaded");
+console.log("✅ OUR EFOOTBALL TOUR v3.1 — OneSignal + Fixed Auto-Approve");
 </script>
 </body>
 </html>
