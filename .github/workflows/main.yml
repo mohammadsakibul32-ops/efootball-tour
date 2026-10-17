@@ -55,33 +55,7 @@ jobs:
 
       - name: Create capacitor.config.json
         run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.ourefootballtour.app",
-            "appName": "OUR TOUR",
-            "webDir": "www",
-            "bundledWebRuntime": false,
-            "server": {
-              "androidScheme": "https"
-            },
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 2000,
-                "launchAutoHide": true,
-                "backgroundColor": "#05070e",
-                "androidSplashResourceName": "splash",
-                "androidScaleType": "CENTER_INSIDE",
-                "showSpinner": false,
-                "splashFullScreen": true,
-                "splashImmersive": true
-              },
-              "StatusBar": {
-                "style": "DARK",
-                "backgroundColor": "#05070e"
-              }
-            }
-          }
-          EOF
+          printf '%s\n' '{' '  "appId": "com.ourefootballtour.app",' '  "appName": "OUR TOUR",' '  "webDir": "www",' '  "bundledWebRuntime": false,' '  "server": { "androidScheme": "https" },' '  "plugins": {' '    "SplashScreen": {' '      "launchShowDuration": 2000,' '      "launchAutoHide": true,' '      "backgroundColor": "#05070e",' '      "androidSplashResourceName": "splash",' '      "androidScaleType": "CENTER_INSIDE",' '      "showSpinner": false,' '      "splashFullScreen": true,' '      "splashImmersive": true' '    },' '    "StatusBar": { "style": "DARK", "backgroundColor": "#05070e" }' '  }' '}' > capacitor.config.json
 
       - name: Capacitor init & add android
         run: |
@@ -120,15 +94,7 @@ jobs:
         run: |
           RES=android/app/src/main/res
           mkdir -p "$RES/values"
-          cat > "$RES/values/colors.xml" << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <color name="colorPrimary">#05070e</color>
-              <color name="colorPrimaryDark">#05070e</color>
-              <color name="colorAccent">#22d3ee</color>
-              <color name="splashBackground">#05070e</color>
-          </resources>
-          EOF
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<resources>' '    <color name="colorPrimary">#05070e</color>' '    <color name="colorPrimaryDark">#05070e</color>' '    <color name="colorAccent">#22d3ee</color>' '    <color name="splashBackground">#05070e</color>' '</resources>' > "$RES/values/colors.xml"
 
       - name: Delete all default splash and icon files
         run: |
@@ -156,49 +122,28 @@ jobs:
           convert "$SRC" -resize 144x144 -background none -gravity center -extent 144x144 "$RES/mipmap-xxhdpi/ic_launcher.png"
           convert "$SRC" -resize 192x192 -background none -gravity center -extent 192x192 "$RES/mipmap-xxxhdpi/ic_launcher.png"
 
-      - name: Generate Splash Screens (FIX BRIGHTNESS)
+      - name: Generate Splash Screens
         run: |
           set -e
           SRC="icon.png"
           RES=android/app/src/main/res
           mkdir -p "$RES/drawable" "$RES/drawable-mdpi" "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi"
-          
           convert -size 320x480 xc:'#05070e' \( "$SRC" -resize 160x160 \) -gravity center -composite "$RES/drawable-mdpi/splash.png"
           convert -size 480x800 xc:'#05070e' \( "$SRC" -resize 240x240 \) -gravity center -composite "$RES/drawable-hdpi/splash.png"
           convert -size 720x1280 xc:'#05070e' \( "$SRC" -resize 360x360 \) -gravity center -composite "$RES/drawable-xhdpi/splash.png"
           convert -size 960x1600 xc:'#05070e' \( "$SRC" -resize 480x480 \) -gravity center -composite "$RES/drawable-xxhdpi/splash.png"
           convert -size 1280x1920 xc:'#05070e' \( "$SRC" -resize 640x640 \) -gravity center -composite "$RES/drawable-xxxhdpi/splash.png"
-          
           cp "$RES/drawable-xhdpi/splash.png" "$RES/drawable/splash.png"
 
       - name: Create launch_background.xml
         run: |
           RES=android/app/src/main/res
-          cat > "$RES/drawable/launch_background.xml" << 'XMLEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-              <item android:drawable="@color/splashBackground" />
-              <item>
-                  <bitmap android:gravity="center" android:src="@drawable/splash" />
-              </item>
-          </layer-list>
-          XMLEOF
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">' '    <item android:drawable="@color/splashBackground" />' '    <item>' '        <bitmap android:gravity="center" android:src="@drawable/splash" />' '    </item>' '</layer-list>' > "$RES/drawable/launch_background.xml"
 
-      - name: Override styles.xml (FIX BLACK SCREEN)
+      - name: Override styles.xml
         run: |
           STYLES=android/app/src/main/res/values/styles.xml
-          cat > "$STYLES" << 'XMLEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme.NoActionBarLaunch" parent="Theme.AppCompat.Light.NoActionBar">
-                  <item name="android:background">@drawable/launch_background</item>
-                  <item name="android:windowBackground">@drawable/launch_background</item>
-                  <item name="android:windowFullscreen">true</item>
-                  <item name="android:windowContentOverlay">@null</item>
-                  <item name="android:windowDisablePreview">false</item>
-              </style>
-          </resources>
-          XMLEOF
+          printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>' '<resources>' '    <style name="AppTheme.NoActionBarLaunch" parent="Theme.AppCompat.Light.NoActionBar">' '        <item name="android:background">@drawable/launch_background</item>' '        <item name="android:windowBackground">@drawable/launch_background</item>' '        <item name="android:windowFullscreen">true</item>' '        <item name="android:windowContentOverlay">@null</item>' '        <item name="android:windowDisablePreview">false</item>' '    </style>' '</resources>' > "$STYLES"
 
       - name: Final sync
         run: npx cap sync android
@@ -233,8 +178,7 @@ jobs:
         with:
           tag_name: latest
           name: "Latest Build"
-          body: |
-            Auto build from commit ${{ github.sha }}
+          body: "Auto build from commit ${{ github.sha }}"
           files: |
             output/our-tour.apk
             output/app-debug.apk
