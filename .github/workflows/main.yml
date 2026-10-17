@@ -163,7 +163,6 @@ jobs:
           RES=android/app/src/main/res
           mkdir -p "$RES/drawable" "$RES/drawable-mdpi" "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi"
           
-          # এখানে ব্যাকগ্রাউন্ড কালো (#05070e) এর বদলে সাদা (#FFFFFF) করা হয়েছে যাতে ব্রাইটনেস ঠিক থাকে
           convert -size 320x480 xc:'#05070e' \( "$SRC" -resize 160x160 \) -gravity center -composite "$RES/drawable-mdpi/splash.png"
           convert -size 480x800 xc:'#05070e' \( "$SRC" -resize 240x240 \) -gravity center -composite "$RES/drawable-hdpi/splash.png"
           convert -size 720x1280 xc:'#05070e' \( "$SRC" -resize 360x360 \) -gravity center -composite "$RES/drawable-xhdpi/splash.png"
@@ -191,7 +190,6 @@ jobs:
           cat > "$STYLES" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-              <!-- এই থিমটি ব্যবহার করলে অ্যাপ ওপেন হওয়ার সময় কোনো কালো স্ক্রিন আসবে না -->
               <style name="AppTheme.NoActionBarLaunch" parent="Theme.AppCompat.Light.NoActionBar">
                   <item name="android:background">@drawable/launch_background</item>
                   <item name="android:windowBackground">@drawable/launch_background</item>
