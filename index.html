@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#05070e">
+<!-- 🔥 ক্যাশে সমস্যা এড়ানোর জন্য নতুন ট্যাগ -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>OUR EFOOTBALL TOUR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -556,7 +560,7 @@ select.inp{appearance:none;background-image:linear-gradient(45deg,transparent 50
 <div id="toast" class="toast"></div>
 <script>
 /* ================================================================
-   OUR EFOOTBALL TOUR v3.2 — FIXED CHAT PUSH + ANNOUNCEMENT POPUP
+   OUR EFOOTBALL TOUR v3.3 — FIXED CACHE + ONESIGNAL PUSH
    ================================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyBgeeZtY-q5AN7JwuXFF5sBoTM9VU7ono8",
@@ -577,10 +581,9 @@ const APP_VERSION = 4;
 const DEFAULT_LOGO = "https://cdn.phototourl.com/member/2026-09-27-95ef7b78-f21d-49d6-a698-af39c66628b2.png";
 
 /* ════════════════════════════════════════════════════════════════
-   ONESIGNAL PUSH
+   ONESIGNAL PUSH (FIXED API URL)
    ════════════════════════════════════════════════════════════════ */
 const ONESIGNAL_APP_ID = "58a1aed9-0e82-4063-8da0-bd9f19dc1b94";
-/* ⚠️ এখানে আপনার OneSignal REST API Key বসান */
 const OS_KEY = "os_v2_app_lcq25wioqjaghdnaxwprtxa3ssms2kycx4zekz5ite3xntc23ykqbpruxve7x32qlrqettdm2r6sydcetqfwznbmu7anlldjinpbqiy";
 
 let __osInit = false;
@@ -1426,7 +1429,7 @@ function copyCode(c){
 window.copyCode=copyCode;
 
 /* ════════════════════════════════════════════════════════════════
-   LIVE CHAT (FIXED WITH AUTO PUSH)
+   LIVE CHAT (FIXED API URL)
    ════════════════════════════════════════════════════════════════ */
 async function openChat(id){
   try{
@@ -1511,7 +1514,7 @@ async function sendChat(){
     });
     inp.value="";
 
-    // 2. Auto push to opponent
+    // 2. Auto push to opponent (FIXED API URL)
     const mDoc = await db.collection("matches").doc(S.chatMatchId).get();
     if(mDoc.exists && OS_KEY && OS_KEY !== "PASTE_YOUR_ONESIGNAL_KEY_HERE"){
       const m = mDoc.data();
@@ -1523,8 +1526,8 @@ async function sendChat(){
           userId: opUid, title: "💬 Live Chat", message: uname + ": " + text.substring(0,100), type: "match", read: false, matchId: S.chatMatchId, createdAt: FV.serverTimestamp()
         }).catch(()=>{});
 
-        // Push
-        fetch("https://onesignal.com/api/v1/notifications",{
+        // Push (URL FIXED HERE)
+        fetch("https://api.onesignal.com/api/v1/notifications",{
           method:"POST",
           headers:{ "Content-Type":"application/json", "Authorization":"Basic " + OS_KEY },
           body: JSON.stringify({
@@ -2044,7 +2047,7 @@ document.querySelectorAll(".modal").forEach(m=>{
   m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("show")});
 });
 
-console.log("✅ OUR EFOOTBALL TOUR v3.2 — Chat Push + Announcement Popup fixed");
+console.log("✅ OUR EFOOTBALL TOUR v3.3 — Cache & OneSignal Push Fixed");
 </script>
 </body>
 </html>
